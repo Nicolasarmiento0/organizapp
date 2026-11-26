@@ -37,6 +37,15 @@ export interface ThemePalette {
   glassBorder: string;
   glassBorderStrong: string;
   glassSpecularTop: string;
+  glassBubbleFill: string;
+  glassBubbleFillStrong: string;
+  glassBubbleBorder: string;
+  glassBubbleSpecular: string;
+  glassBubbleGlow: string;
+  glassSpotlight: string;
+  glassLensRing: string;
+  glassLensFill: string;
+  glassLensShadow: string;
   divider: string;
 
   textPrimary: string;
@@ -91,6 +100,15 @@ export const darkTheme: ThemePalette = {
   glassBorder: 'rgba(255, 255, 255, 0.08)',
   glassBorderStrong: 'rgba(255, 255, 255, 0.15)',
   glassSpecularTop: 'rgba(255, 255, 255, 0.11)',
+  glassBubbleFill: 'rgba(255, 255, 255, 0.11)',
+  glassBubbleFillStrong: 'rgba(255, 255, 255, 0.17)',
+  glassBubbleBorder: 'rgba(255, 255, 255, 0.26)',
+  glassBubbleSpecular: 'rgba(255, 255, 255, 0.42)',
+  glassBubbleGlow: 'rgba(255, 255, 255, 0.10)',
+  glassSpotlight: 'rgba(255, 255, 255, 0.14)',
+  glassLensRing: 'rgba(255, 255, 255, 0.36)',
+  glassLensFill: 'rgba(255, 255, 255, 0.08)',
+  glassLensShadow: 'rgba(0, 0, 0, 0.45)',
   divider: 'rgba(255, 255, 255, 0.07)',
 
   textPrimary: '#F5F7FA',
@@ -182,6 +200,15 @@ export const lightTheme: ThemePalette = {
   glassBorder: 'rgba(15, 17, 21, 0.08)',
   glassBorderStrong: 'rgba(15, 17, 21, 0.15)',
   glassSpecularTop: 'rgba(255, 255, 255, 0.98)',
+  glassBubbleFill: 'rgba(255, 255, 255, 0.72)',
+  glassBubbleFillStrong: 'rgba(255, 255, 255, 0.88)',
+  glassBubbleBorder: 'rgba(15, 17, 21, 0.16)',
+  glassBubbleSpecular: 'rgba(255, 255, 255, 0.96)',
+  glassBubbleGlow: 'rgba(15, 17, 21, 0.09)',
+  glassSpotlight: 'rgba(17, 19, 24, 0.055)',
+  glassLensRing: 'rgba(15, 17, 21, 0.22)',
+  glassLensFill: 'rgba(255, 255, 255, 0.78)',
+  glassLensShadow: 'rgba(15, 17, 21, 0.12)',
   divider: 'rgba(15, 17, 21, 0.07)',
 
   textPrimary: '#111318',
@@ -313,14 +340,32 @@ export const fontFamilies = {
   displayMedium: 'PlusJakartaSans_500Medium',
   displaySemiBold: 'PlusJakartaSans_600SemiBold',
   displayBold: 'PlusJakartaSans_700Bold',
+  bodyRegular: 'Inter_400Regular',
+  bodyMedium: 'Inter_500Medium',
+  bodySemiBold: 'Inter_600SemiBold',
+  bodyBold: 'Inter_700Bold',
 } as const;
 
 /**
- * Tipografía hegemónica para títulos, encabezados H1–H3, eyebrows y KPIs.
- * Usa pesos explícitos de Plus Jakarta Sans sin `fontWeight` conflictivo.
+ * Tipografía hegemónica dual:
+ * - Títulos, H1–H3, eyebrows y KPIs: Plus Jakarta Sans (display*)
+ * - Cuerpo, editor de notas, etiquetas y UI: Inter (body*)
+ * Usa pesos explícitos sin `fontWeight` conflictivo para evitar faux-bold.
  */
 export const typography: Record<
-  'screenTitle' | 'docTitle' | 'cardTitle' | 'heading2' | 'heading3' | 'kpiValue' | 'eyebrow',
+  | 'screenTitle'
+  | 'docTitle'
+  | 'cardTitle'
+  | 'heading2'
+  | 'heading3'
+  | 'kpiValue'
+  | 'eyebrow'
+  | 'body'
+  | 'bodyMedium'
+  | 'bodySemiBold'
+  | 'bodyBold'
+  | 'label'
+  | 'caption',
   TextStyle
 > = {
   screenTitle: {
@@ -350,6 +395,30 @@ export const typography: Record<
   eyebrow: {
     fontFamily: fontFamilies.displayMedium,
     letterSpacing: 1.15,
+  },
+  body: {
+    fontFamily: fontFamilies.bodyRegular,
+    letterSpacing: -0.18,
+  },
+  bodyMedium: {
+    fontFamily: fontFamilies.bodyMedium,
+    letterSpacing: -0.15,
+  },
+  bodySemiBold: {
+    fontFamily: fontFamilies.bodySemiBold,
+    letterSpacing: -0.15,
+  },
+  bodyBold: {
+    fontFamily: fontFamilies.bodyBold,
+    letterSpacing: -0.2,
+  },
+  label: {
+    fontFamily: fontFamilies.bodyMedium,
+    letterSpacing: -0.1,
+  },
+  caption: {
+    fontFamily: fontFamilies.bodyRegular,
+    letterSpacing: -0.05,
   },
 };
 
@@ -414,6 +483,14 @@ export const shadows: Record<'subtle' | 'floatingDock' | 'modal', ViewStyle> = {
   })!,
 };
 
+export const glassMotion = {
+  glideSpring: { damping: 19, stiffness: 280, mass: 0.68 },
+  bubbleSpring: { damping: 16, stiffness: 320, mass: 0.7 },
+  lensSpring: { damping: 18, stiffness: 360, mass: 0.6 },
+  pressSpring: { damping: 20, stiffness: 420, mass: 0.55 },
+  fadeMs: 160,
+} as const;
+
 export const tokens = {
   colors,
   darkTheme,
@@ -425,6 +502,7 @@ export const tokens = {
   typography,
   iconMetrics,
   shadows,
+  glassMotion,
 } as const;
 
 export default tokens;

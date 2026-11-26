@@ -294,7 +294,7 @@ export function detectLiveMarkdownShortcut(
   block: NoteBlock,
   nextText: string
 ): NoteBlock | null {
-  if (block.type !== 'paragraph') return null;
+  if (block.type !== 'paragraph' || nextText.includes('\n')) return null;
 
   if (nextText.startsWith('### ')) {
     return { ...block, type: 'h3', text: nextText.slice(4) };

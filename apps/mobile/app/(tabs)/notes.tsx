@@ -32,7 +32,7 @@ import {
   Trash2,
   X,
 } from '../../src/components/icons';
-import { radii, spacing, typography } from '../../src/theme/tokens';
+import { fontFamilies, radii, spacing, typography } from '../../src/theme/tokens';
 import { useTheme } from '../../src/theme/ThemeContext';
 import { LiquidGlassCard } from '../../src/components/glass/LiquidGlassCard';
 import { MacIconBadge } from '../../src/components/glass/MacIconBadge';
@@ -111,6 +111,8 @@ export default function NotesWorkspaceScreen() {
   const [trashModalOpen, setTrashModalOpen] = useState(false);
   const [copiedMarkdown, setCopiedMarkdown] = useState(false);
   const [toastText, setToastText] = useState<string | null>(null);
+  const titleInputRef = useRef<TextInput>(null);
+  const lastAppliedParamPageIdRef = useRef<string | null>(null);
   const draftStateRef = useRef({
     activePage,
     draftTitle: '',
@@ -124,7 +126,12 @@ export default function NotesWorkspaceScreen() {
   // Navegación profunda por ?pageId=... desde Recordatorios o Dashboard
   useEffect(() => {
     const targetId = typeof params.pageId === 'string' ? params.pageId : null;
-    if (targetId && pages.some((p) => p.id === targetId)) {
+    if (
+      targetId &&
+      targetId !== lastAppliedParamPageIdRef.current &&
+      pages.some((p) => p.id === targetId)
+    ) {
+      lastAppliedParamPageIdRef.current = targetId;
       setActivePageId(targetId);
     }
   }, [params.pageId, pages, setActivePageId]);
@@ -139,11 +146,89 @@ export default function NotesWorkspaceScreen() {
     }
   }, [activePage?.id]);
 
-  // Atajo global Cmd+K / Ctrl+K + pegar imágenes del portapapeles (Web) -> WebP ~80 KB -> Cloudflare R2
+  // Atajo global Cmd+K / Ctrl+K + guard CapsLock título + pegar imágenes del portapapeles (Web) -> WebP ~80 KB -> Cloudflare R2
   useEffect(() => {
     if (Platform.OS !== 'web' || typeof window === 'undefined') {
       return undefined;
     }
+
+    let lastTitleBlur: {
+      el: HTMLInputElement;
+      start: number | null;
+      end: number | null;
+      at: number;
+    } | null = null;
+
+    const getTitleDom = () =>
+      titleInputRef.current as unknown as HTMLInputElement | null;
+
+    const handleTitleFocusOut = (event: FocusEvent) => {
+      const titleEl = getTitleDom();
+      if (titleEl && event.target === titleEl) {
+        try {
+          lastTitleBlur = {
+            el: titleEl,
+            start: titleEl.selectionStart,
+            end: titleEl.selectionEnd,
+            at: Date.now(),
+          };
+        } catch {
+          lastTitleBlur = { el: titleEl, start: null, end: null, at: Date.now() };
+        }
+      }
+    };
+
+    const handleCapsLockTitle = (event: KeyboardEvent) => {
+      if (event.key !== 'CapsLock' && event.code !== 'CapsLock') return;
+      const titleEl = getTitleDom();
+      if (!titleEl || typeof document === 'undefined') return;
+
+      const active = document.activeElement;
+      let shouldRestore = false;
+      let sel: { start: number | null; end: number | null } = {
+        start: null,
+        end: null,
+      };
+
+      if (active === titleEl) {
+        shouldRestore = true;
+        try {
+          sel = { start: titleEl.selectionStart, end: titleEl.selectionEnd };
+        } catch {
+          sel = { start: null, end: null };
+        }
+      } else if (
+        lastTitleBlur &&
+        lastTitleBlur.el === titleEl &&
+        titleEl.isConnected &&
+        Date.now() - lastTitleBlur.at < 250 &&
+        (active === null || active === document.body)
+      ) {
+        shouldRestore = true;
+        sel = { start: lastTitleBlur.start, end: lastTitleBlur.end };
+      }
+
+      if (!shouldRestore) return;
+
+      const restore = () => {
+        if (!titleEl.isConnected) return;
+        const nowActive = document.activeElement;
+        if (nowActive === null || nowActive === document.body) {
+          titleEl.focus({ preventScroll: true });
+          if (sel.start !== null && sel.end !== null) {
+            try {
+              titleEl.setSelectionRange(sel.start, sel.end);
+            } catch {
+              // Ignorar si no soporta selección
+            }
+          }
+        }
+      };
+
+      requestAnimationFrame(restore);
+      window.setTimeout(restore, 40);
+    };
+
     const handleKeyDown = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
         event.preventDefault();
@@ -200,9 +285,15 @@ export default function NotesWorkspaceScreen() {
       })();
     };
 
+    document.addEventListener('focusout', handleTitleFocusOut, true);
+    window.addEventListener('keydown', handleCapsLockTitle, true);
+    window.addEventListener('keyup', handleCapsLockTitle, true);
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('paste', handlePaste);
     return () => {
+      document.removeEventListener('focusout', handleTitleFocusOut, true);
+      window.removeEventListener('keydown', handleCapsLockTitle, true);
+      window.removeEventListener('keyup', handleCapsLockTitle, true);
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('paste', handlePaste);
     };
@@ -543,7 +634,9 @@ export default function NotesWorkspaceScreen() {
                                   color: isLast
                                     ? theme.accentPrimaryLink
                                     : theme.textSecondary,
-                                  fontWeight: isLast ? '700' : '500',
+                                  fontFamily: isLast
+                                    ? fontFamilies.bodyBold
+                                    : fontFamilies.bodyMedium,
                                 },
                               ]}
                               numberOfLines={1}
@@ -731,6 +824,7 @@ export default function NotesWorkspaceScreen() {
                   </Pressable>
 
                   <TextInput
+                    ref={titleInputRef}
                     value={draftTitle}
                     onChangeText={handleTitleChange}
                     placeholder="Título de la página..."
@@ -1127,7 +1221,7 @@ const styles = StyleSheet.create({
   },
   spotlightHeaderText: {
     fontSize: 12,
-    fontWeight: '600',
+    ...typography.bodySemiBold,
   },
   kbdPill: {
     paddingHorizontal: 5,
@@ -1223,7 +1317,7 @@ const styles = StyleSheet.create({
   },
   breadcrumbText: {
     fontSize: 12,
-    fontWeight: '500',
+    ...typography.bodyMedium,
   },
   pageActionsRow: {
     flexDirection: 'row',
@@ -1241,7 +1335,7 @@ const styles = StyleSheet.create({
   },
   actionChipText: {
     fontSize: 11,
-    fontWeight: '600',
+    ...typography.bodySemiBold,
   },
   actionIconBtn: {
     width: 28,
@@ -1313,8 +1407,8 @@ const styles = StyleSheet.create({
   },
   metricsText: {
     fontSize: 11,
-    fontWeight: '600',
     fontVariant: ['tabular-nums'],
+    ...typography.caption,
   },
   subpagesSection: {
     borderTopWidth: 1,
@@ -1375,10 +1469,12 @@ const styles = StyleSheet.create({
   },
   subpageCardMeta: {
     fontSize: 11,
+    ...typography.caption,
   },
   subpagesEmpty: {
     fontSize: 12,
     lineHeight: 18,
+    ...typography.body,
   },
   emptyState: {
     alignItems: 'center',

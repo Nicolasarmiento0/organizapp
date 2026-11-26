@@ -7,6 +7,7 @@ import * as schema from '@organiza/shared/schema';
 export interface CloudflareBindings {
   DB: D1Database;
   MEDIA_BUCKET?: R2Bucket;
+  ASSETS?: Fetcher;
   BETTER_AUTH_SECRET: string;
   BETTER_AUTH_URL: string;
   TRUSTED_ORIGINS?: string;
@@ -39,6 +40,9 @@ export function createAuth(env: CloudflareBindings) {
       enabled: true,
       autoSignIn: true,
       minPasswordLength: 8,
+    },
+    advanced: {
+      useSecureCookies: !env.BETTER_AUTH_URL.startsWith('http://'),
     },
     plugins: [expo()],
     trustedOrigins: (request) => {

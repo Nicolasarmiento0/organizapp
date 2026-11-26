@@ -1,29 +1,34 @@
-name = "organiza-app-api"
+name = "organizapp"
 main = "src/index.ts"
-compatibility_date = "2026-11-16"
+compatibility_date = "2025-07-18"
 compatibility_flags = ["nodejs_compat"]
 
 [observability]
 enabled = true
 head_sampling_rate = 1
 
+[assets]
+directory = "../mobile/dist"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+run_worker_first = true
+
 # Base de datos SQLite en el Edge (Cloudflare D1 - Tier 100% Gratuito)
-# Ejecuta `npx wrangler d1 create organiza-app-db` y reemplaza database_id
 [[d1_databases]]
 binding = "DB"
 database_name = "organiza-app-db"
-database_id = "00000000-0000-0000-0000-000000000000"
+database_id = "23d464f7-9bb5-43b5-9455-4b9a23ae5085"
 migrations_dir = "drizzle"
 
 # Almacenamiento de imágenes comprimidas WebP (Cloudflare R2 - Tier Gratuito $0)
-# Ejecuta `npx wrangler r2 bucket create organiza-app-media` antes de desplegar
-[[r2_buckets]]
-binding = "MEDIA_BUCKET"
-bucket_name = "organiza-app-media"
+# Habilita R2 en el Cloudflare Dashboard y crea el bucket antes de descomentar:
+# [[r2_buckets]]
+# binding = "MEDIA_BUCKET"
+# bucket_name = "organiza-app-media"
 
 [vars]
-BETTER_AUTH_URL = "http://localhost:8787"
-TRUSTED_ORIGINS = "organizaapp://,exp://,http://localhost:8081"
+BETTER_AUTH_URL = "https://organizapp.nsarmiento.workers.dev"
+TRUSTED_ORIGINS = "https://organizapp.nsarmiento.workers.dev,organizaapp://,exp://,http://localhost:8081,http://localhost:8082"
 # IMPORTANTE: No guardes secretos en wrangler.toml.
 # En local usa `.dev.vars` con BETTER_AUTH_SECRET="..."
 # En producción ejecuta: `npx wrangler secret put BETTER_AUTH_SECRET`

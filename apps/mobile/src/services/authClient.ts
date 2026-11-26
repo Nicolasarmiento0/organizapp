@@ -3,8 +3,28 @@ import { createAuthClient } from 'better-auth/react';
 import { expoClient } from '@better-auth/expo/client';
 import * as SecureStore from 'expo-secure-store';
 
-export const API_BASE_URL =
-  process.env.EXPO_PUBLIC_API_URL?.replace(/\/$/, '') || 'http://localhost:8787';
+function resolveApiBaseUrl(): string {
+  const envUrl = process.env.EXPO_PUBLIC_API_URL?.replace(/\/$/, '');
+  if (envUrl) return envUrl;
+  if (
+    Platform.OS === 'web' &&
+    typeof window !== 'undefined' &&
+    window.location
+  ) {
+    if (window.location.hostname === 'localhost') {
+      return 'http://localhost:8787';
+    }
+    if (window.location.hostname === '127.0.0.1') {
+      return 'http://127.0.0.1:8787';
+    }
+    if (window.location.origin) {
+      return window.location.origin;
+    }
+  }
+  return 'http://localhost:8787';
+}
+
+export const API_BASE_URL = resolveApiBaseUrl();
 
 const OFFLINE_MODE_STORAGE_KEY = 'organiza_offline_guest_enabled';
 const LOCAL_DEFAULT_USER_ID = 'local-user';
@@ -67,6 +87,7 @@ export const authClient = createAuthClient({
   baseURL: API_BASE_URL,
   fetchOptions: {
     credentials: 'include',
+    timeout: 10000,
   },
   plugins:
     Platform.OS === 'web'

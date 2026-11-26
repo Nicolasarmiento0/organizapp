@@ -31,9 +31,23 @@ import {
   User,
   X,
 } from '../../src/components/icons';
-import { iconMetrics, radii, spacing, typography, type MacModuleType } from '../../src/theme/tokens';
+import Animated, {
+  useAnimatedStyle,
+  useReducedMotion,
+  useSharedValue,
+  withSpring,
+} from 'react-native-reanimated';
+import {
+  glassMotion,
+  iconMetrics,
+  radii,
+  spacing,
+  typography,
+  type MacModuleType,
+} from '../../src/theme/tokens';
 import { useTheme } from '../../src/theme/ThemeContext';
 import { LiquidGlassCard } from '../../src/components/glass/LiquidGlassCard';
+import { LiquidGlassBubble } from '../../src/components/glass/LiquidGlassBubble';
 import { MacIconBadge } from '../../src/components/glass/MacIconBadge';
 import { useQuickCapture } from '../../src/components/glass/QuickCaptureContext';
 import { useAccountSheet } from '../../src/components/auth/AccountSheet';
@@ -110,6 +124,84 @@ function parseFirstTag(tagsJson: string): string {
   }
   return 'Nota';
 }
+
+interface ModuleCardItem {
+  key: MacModuleType;
+  title: string;
+  subtitle: string;
+  stat: string;
+  icon: typeof Calendar;
+  route:
+  | '/(tabs)/calendar'
+  | '/(tabs)/reminders'
+  | '/(tabs)/habits'
+  | '/(tabs)/notes';
+}
+
+const ModuleTileInner: React.FC<{ mod: ModuleCardItem; hovered: boolean }> = ({
+  mod,
+  hovered,
+}) => {
+  const { theme } = useTheme();
+  const reducedMotion = useReducedMotion();
+  const hoverVal = useSharedValue(0);
+
+  useEffect(() => {
+    hoverVal.value = withSpring(hovered ? 1 : 0, glassMotion.bubbleSpring);
+  }, [hovered, hoverVal]);
+
+  const badgeAnimatedStyle = useAnimatedStyle(() => {
+    if (reducedMotion) return {};
+    return {
+      transform: [{ scale: 1 + hoverVal.value * 0.08 }],
+    };
+  }, [reducedMotion]);
+
+  const arrowAnimatedStyle = useAnimatedStyle(() => {
+    if (reducedMotion) return {};
+    return {
+      transform: [
+        { translateX: hoverVal.value * 2.5 },
+        { translateY: hoverVal.value * -2.5 },
+      ],
+    };
+  }, [reducedMotion]);
+
+  return (
+    <>
+      <View style={styles.moduleTileTop}>
+        <Animated.View style={badgeAnimatedStyle}>
+          <MacIconBadge
+            icon={mod.icon}
+            module={mod.key}
+            containerSize={36}
+            size={18}
+          />
+        </Animated.View>
+        <Animated.View style={arrowAnimatedStyle}>
+          <ArrowUpRight
+            size={16}
+            color={hovered ? theme.accentPrimaryLink : theme.textMuted}
+            strokeWidth={2}
+          />
+        </Animated.View>
+      </View>
+      <View style={styles.moduleTileText}>
+        <Text style={[styles.moduleTileTitle, { color: theme.textPrimary }]}>
+          {mod.title}
+        </Text>
+        <View style={styles.moduleTileBottomRow}>
+          <Text style={[styles.moduleTileSub, { color: theme.textSecondary }]}>
+            {mod.subtitle}
+          </Text>
+          <Text style={[styles.moduleTileStat, { color: theme.textPrimary }]}>
+            {mod.stat}
+          </Text>
+        </View>
+      </View>
+    </>
+  );
+};
 
 export default function DashboardBentoScreen() {
   const { width } = useWindowDimensions();
@@ -208,9 +300,9 @@ export default function DashboardBentoScreen() {
 
   const totalSearchHits = searchResults
     ? searchResults.blocks.length +
-      searchResults.tasks.length +
-      searchResults.habits.length +
-      searchResults.notes.length
+    searchResults.tasks.length +
+    searchResults.habits.length +
+    searchResults.notes.length
     : 0;
 
   const moduleCards: Array<{
@@ -221,39 +313,39 @@ export default function DashboardBentoScreen() {
     icon: typeof Calendar;
     route: '/(tabs)/calendar' | '/(tabs)/reminders' | '/(tabs)/habits' | '/(tabs)/notes';
   }> = [
-    {
-      key: 'calendar',
-      title: 'Calendario',
-      subtitle: 'Estilo macOS',
-      stat: `${blocksForSelectedDate.length} bloques`,
-      icon: Calendar,
-      route: '/(tabs)/calendar',
-    },
-    {
-      key: 'reminders',
-      title: 'Recordatorios',
-      subtitle: 'Notificaciones',
-      stat: `${telemetry.pendingTasks} pend.`,
-      icon: Bell,
-      route: '/(tabs)/reminders',
-    },
-    {
-      key: 'habits',
-      title: 'Hábitos',
-      subtitle: 'Checklist + Insignias',
-      stat: `${telemetry.completedHabits}/${telemetry.totalHabits} hoy`,
-      icon: CheckSquare,
-      route: '/(tabs)/habits',
-    },
-    {
-      key: 'notes',
-      title: 'Notas',
-      subtitle: 'Estilo Notion',
-      stat: `${notes.length} páginas`,
-      icon: FileText,
-      route: '/(tabs)/notes',
-    },
-  ];
+      {
+        key: 'calendar',
+        title: 'Calendario',
+        subtitle: 'Que tienes para hoy?',
+        stat: `${blocksForSelectedDate.length} bloques`,
+        icon: Calendar,
+        route: '/(tabs)/calendar',
+      },
+      {
+        key: 'reminders',
+        title: 'Recordatorios',
+        subtitle: 'No lo olvides!!',
+        stat: `${telemetry.pendingTasks} pend.`,
+        icon: Bell,
+        route: '/(tabs)/reminders',
+      },
+      {
+        key: 'habits',
+        title: 'Hábitos',
+        subtitle: 'Tracker de hábitos',
+        stat: `${telemetry.completedHabits}/${telemetry.totalHabits} hoy`,
+        icon: CheckSquare,
+        route: '/(tabs)/habits',
+      },
+      {
+        key: 'notes',
+        title: 'Notas',
+        subtitle: 'Documentos e Ideas',
+        stat: `${notes.length} páginas`,
+        icon: FileText,
+        route: '/(tabs)/notes',
+      },
+    ];
 
   const isAuthenticated = Boolean(session?.user);
 
@@ -340,10 +432,13 @@ export default function DashboardBentoScreen() {
             </Pressable>
 
             {/* Píldora de Cuenta / Perfil */}
-            <Pressable
+            <LiquidGlassBubble
+              variant="pill"
+              borderRadius={radii.pill}
               onPress={openAccountSheet}
-              style={[
-                styles.accountPill,
+              accessibilityLabel="Abrir cuenta y perfil"
+              surfaceStyle={[
+                styles.accountPillSurface,
                 {
                   backgroundColor: theme.card,
                   borderColor: isAuthenticated
@@ -351,7 +446,7 @@ export default function DashboardBentoScreen() {
                     : theme.glassBorder,
                 },
               ]}
-              accessibilityLabel="Abrir cuenta y perfil"
+              contentStyle={styles.accountPill}
             >
               {isAuthenticated ? (
                 <View
@@ -375,7 +470,7 @@ export default function DashboardBentoScreen() {
               <Text style={[styles.accountPillText, { color: theme.textPrimary }]}>
                 {isAuthenticated ? firstName : 'Iniciar sesión'}
               </Text>
-            </Pressable>
+            </LiquidGlassBubble>
 
             {/* Toggle de tema en móvil */}
             {!isDesktop ? (
@@ -399,19 +494,19 @@ export default function DashboardBentoScreen() {
             ) : null}
 
             {/* Botón CTA + Nuevo */}
-            <Pressable
+            <LiquidGlassBubble
+              variant="cta"
+              borderRadius={radii.pill}
               onPress={() => openQuickCapture('task')}
-              style={({ pressed }) => [
-                styles.newCtaBtn,
-                { backgroundColor: theme.accentVolt },
-                pressed && { opacity: 0.88 },
-              ]}
+              accessibilityLabel="Crear nuevo elemento"
+              surfaceStyle={{ backgroundColor: theme.accentVolt }}
+              contentStyle={styles.newCtaBtn}
             >
               <Plus size={16} color={theme.accentVoltText} strokeWidth={2.3} />
               <Text style={[styles.newCtaText, { color: theme.accentVoltText }]}>
                 Nuevo
               </Text>
-            </Pressable>
+            </LiquidGlassBubble>
           </View>
         </View>
 
@@ -640,51 +735,27 @@ export default function DashboardBentoScreen() {
             {/* Grilla de los 4 Módulos */}
             <View style={styles.modulesGrid}>
               {moduleCards.map((mod) => (
-                <Pressable
+                <LiquidGlassBubble
                   key={mod.key}
+                  variant="card"
+                  borderRadius={radii.md}
+                  enableSpotlight
                   onPress={() => router.push(mod.route)}
-                  style={({ pressed }) => [
-                    styles.moduleTile,
+                  accessibilityLabel={`${mod.title}: ${mod.stat}`}
+                  style={{ width: isTabletOrWide ? '48.8%' : '100%' }}
+                  surfaceStyle={[
+                    styles.moduleTileSurface,
                     {
                       backgroundColor: theme.cardElevated,
                       borderColor: theme.glassBorder,
-                      width: isTabletOrWide ? '48.8%' : '100%',
                     },
-                    pressed && { opacity: 0.85, transform: [{ scale: 0.99 }] },
                   ]}
+                  contentStyle={styles.moduleTile}
                 >
-                  <View style={styles.moduleTileTop}>
-                    <MacIconBadge
-                      icon={mod.icon}
-                      module={mod.key}
-                      containerSize={36}
-                      size={18}
-                    />
-                    <ArrowUpRight
-                      size={16}
-                      color={theme.textMuted}
-                      strokeWidth={2}
-                    />
-                  </View>
-                  <View style={styles.moduleTileText}>
-                    <Text style={[styles.moduleTileTitle, { color: theme.textPrimary }]}>
-                      {mod.title}
-                    </Text>
-                    <View style={styles.moduleTileBottomRow}>
-                      <Text style={[styles.moduleTileSub, { color: theme.textSecondary }]}>
-                        {mod.subtitle}
-                      </Text>
-                      <Text
-                        style={[
-                          styles.moduleTileStat,
-                          { color: theme.textPrimary },
-                        ]}
-                      >
-                        {mod.stat}
-                      </Text>
-                    </View>
-                  </View>
-                </Pressable>
+                  {({ hovered }) => (
+                    <ModuleTileInner mod={mod} hovered={hovered} />
+                  )}
+                </LiquidGlassBubble>
               ))}
             </View>
           </LiquidGlassCard>
@@ -803,10 +874,10 @@ export default function DashboardBentoScreen() {
                             styles.habitMiniTitle,
                             { color: theme.textPrimary },
                             done &&
-                              !isQuant && {
-                                textDecorationLine: 'line-through',
-                                color: theme.textMuted,
-                              },
+                            !isQuant && {
+                              textDecorationLine: 'line-through',
+                              color: theme.textMuted,
+                            },
                           ]}
                           numberOfLines={1}
                         >
@@ -996,63 +1067,159 @@ export default function DashboardBentoScreen() {
               <View style={styles.activityCardsGrid}>
                 {activityFilter !== 'reminders'
                   ? blocksForSelectedDate.slice(0, 3).map((block, index) => {
-                      const isPrimary = index === 0;
-                      return (
-                        <Pressable
-                          key={block.id}
-                          onPress={() => router.push('/(tabs)/calendar')}
-                          style={({ pressed }) => [
-                            styles.activityTile,
-                            {
-                              backgroundColor: theme.cardElevated,
-                              borderColor: isPrimary
-                                ? theme.accentPrimaryBorder
-                                : theme.glassBorder,
-                              width: isTabletOrWide ? '48.6%' : '100%',
-                            },
-                            pressed && { opacity: 0.88 },
-                          ]}
-                        >
-                          <View style={styles.activityTileTop}>
-                            <View
+                    const isPrimary = index === 0;
+                    return (
+                      <Pressable
+                        key={block.id}
+                        onPress={() => router.push('/(tabs)/calendar')}
+                        style={({ pressed }) => [
+                          styles.activityTile,
+                          {
+                            backgroundColor: theme.cardElevated,
+                            borderColor: isPrimary
+                              ? theme.accentPrimaryBorder
+                              : theme.glassBorder,
+                            width: isTabletOrWide ? '48.6%' : '100%',
+                          },
+                          pressed && { opacity: 0.88 },
+                        ]}
+                      >
+                        <View style={styles.activityTileTop}>
+                          <View
+                            style={[
+                              styles.activityBadge,
+                              {
+                                backgroundColor: isPrimary
+                                  ? theme.accentPrimarySoft
+                                  : theme.pillBg,
+                              },
+                            ]}
+                          >
+                            <Clock
+                              size={12}
+                              color={
+                                isPrimary
+                                  ? theme.accentPrimaryLink
+                                  : theme.textSecondary
+                              }
+                              strokeWidth={2}
+                            />
+                            <Text
                               style={[
-                                styles.activityBadge,
+                                styles.activityBadgeText,
                                 {
-                                  backgroundColor: isPrimary
-                                    ? theme.accentPrimarySoft
-                                    : theme.pillBg,
+                                  color: isPrimary
+                                    ? theme.accentPrimaryLink
+                                    : theme.textSecondary,
                                 },
                               ]}
                             >
-                              <Clock
-                                size={12}
-                                color={
-                                  isPrimary
-                                    ? theme.accentPrimaryLink
-                                    : theme.textSecondary
-                                }
+                              {block.startTime} – {block.endTime}
+                            </Text>
+                          </View>
+                          <ArrowUpRight
+                            size={15}
+                            color={theme.textMuted}
+                            strokeWidth={2}
+                          />
+                        </View>
+
+                        <Text
+                          style={[
+                            styles.activityTileTitle,
+                            { color: theme.textPrimary },
+                          ]}
+                          numberOfLines={2}
+                        >
+                          {block.title}
+                        </Text>
+                        <Text
+                          style={[
+                            styles.activityTileMeta,
+                            { color: theme.textSecondary },
+                          ]}
+                          numberOfLines={1}
+                        >
+                          {block.blockType === 'deep_work'
+                            ? 'Deep Work'
+                            : block.blockType === 'work_shift'
+                              ? 'Turno Laboral'
+                              : 'Personal'}
+                        </Text>
+                      </Pressable>
+                    );
+                  })
+                  : null}
+
+                {activityFilter !== 'calendar'
+                  ? pendingTasks.slice(0, 3).map((task) => {
+                    const clock = formatAlertClock(task.reminderAt);
+                    const sourceNote = task.sourcePageId
+                      ? notes.find((p) => p.id === task.sourcePageId)
+                      : undefined;
+                    return (
+                      <View
+                        key={task.id}
+                        style={[
+                          styles.activityTile,
+                          {
+                            backgroundColor: theme.cardElevated,
+                            borderColor: theme.glassBorder,
+                            width: isTabletOrWide ? '48.6%' : '100%',
+                          },
+                        ]}
+                      >
+                        <View style={styles.activityTileTop}>
+                          <Pressable
+                            onPress={() => toggleTask(task.id)}
+                            hitSlop={8}
+                            style={styles.reminderToggleRow}
+                          >
+                            <Circle
+                              size={18}
+                              color={theme.textSecondary}
+                              strokeWidth={2}
+                            />
+                            <Text
+                              style={[
+                                styles.priorityTag,
+                                {
+                                  color:
+                                    task.priority === 3
+                                      ? theme.textPrimary
+                                      : theme.textSecondary,
+                                },
+                              ]}
+                            >
+                              P{task.priority}
+                            </Text>
+                          </Pressable>
+
+                          {clock ? (
+                            <View
+                              style={[
+                                styles.alertMiniPill,
+                                { backgroundColor: theme.pillBg },
+                              ]}
+                            >
+                              <Bell
+                                size={11}
+                                color={theme.textSecondary}
                                 strokeWidth={2}
                               />
                               <Text
                                 style={[
-                                  styles.activityBadgeText,
-                                  {
-                                    color: isPrimary
-                                      ? theme.accentPrimaryLink
-                                      : theme.textSecondary,
-                                  },
+                                  styles.alertMiniText,
+                                  { color: theme.textPrimary },
                                 ]}
                               >
-                                {block.startTime} – {block.endTime}
+                                {clock}
                               </Text>
                             </View>
-                            <ArrowUpRight
-                              size={15}
-                              color={theme.textMuted}
-                              strokeWidth={2}
-                            />
-                          </View>
+                          ) : null}
+                        </View>
 
+                        <Pressable onPress={() => toggleTask(task.id)}>
                           <Text
                             style={[
                               styles.activityTileTitle,
@@ -1060,8 +1227,32 @@ export default function DashboardBentoScreen() {
                             ]}
                             numberOfLines={2}
                           >
-                            {block.title}
+                            {task.title}
                           </Text>
+                        </Pressable>
+
+                        {sourceNote ? (
+                          <Pressable
+                            onPress={() =>
+                              router.push({
+                                pathname: '/(tabs)/notes',
+                                params: { pageId: sourceNote.id },
+                              })
+                            }
+                            style={styles.noteOriginLink}
+                          >
+                            <FileText size={11} color={theme.accentPrimaryLink} />
+                            <Text
+                              style={[
+                                styles.activityTileMeta,
+                                { color: theme.accentPrimaryLink },
+                              ]}
+                              numberOfLines={1}
+                            >
+                              Nota: {sourceNote.title}
+                            </Text>
+                          </Pressable>
+                        ) : (
                           <Text
                             style={[
                               styles.activityTileMeta,
@@ -1069,132 +1260,12 @@ export default function DashboardBentoScreen() {
                             ]}
                             numberOfLines={1}
                           >
-                            {block.blockType === 'deep_work'
-                              ? 'Deep Work'
-                              : block.blockType === 'work_shift'
-                                ? 'Turno Laboral'
-                                : 'Personal'}
+                            {task.notes || 'Recordatorio activo'}
                           </Text>
-                        </Pressable>
-                      );
-                    })
-                  : null}
-
-                {activityFilter !== 'calendar'
-                  ? pendingTasks.slice(0, 3).map((task) => {
-                      const clock = formatAlertClock(task.reminderAt);
-                      const sourceNote = task.sourcePageId
-                        ? notes.find((p) => p.id === task.sourcePageId)
-                        : undefined;
-                      return (
-                        <View
-                          key={task.id}
-                          style={[
-                            styles.activityTile,
-                            {
-                              backgroundColor: theme.cardElevated,
-                              borderColor: theme.glassBorder,
-                              width: isTabletOrWide ? '48.6%' : '100%',
-                            },
-                          ]}
-                        >
-                          <View style={styles.activityTileTop}>
-                            <Pressable
-                              onPress={() => toggleTask(task.id)}
-                              hitSlop={8}
-                              style={styles.reminderToggleRow}
-                            >
-                              <Circle
-                                size={18}
-                                color={theme.textSecondary}
-                                strokeWidth={2}
-                              />
-                              <Text
-                                style={[
-                                  styles.priorityTag,
-                                  {
-                                    color:
-                                      task.priority === 3
-                                        ? theme.textPrimary
-                                        : theme.textSecondary,
-                                  },
-                                ]}
-                              >
-                                P{task.priority}
-                              </Text>
-                            </Pressable>
-
-                            {clock ? (
-                              <View
-                                style={[
-                                  styles.alertMiniPill,
-                                  { backgroundColor: theme.pillBg },
-                                ]}
-                              >
-                                <Bell
-                                  size={11}
-                                  color={theme.textSecondary}
-                                  strokeWidth={2}
-                                />
-                                <Text
-                                  style={[
-                                    styles.alertMiniText,
-                                    { color: theme.textPrimary },
-                                  ]}
-                                >
-                                  {clock}
-                                </Text>
-                              </View>
-                            ) : null}
-                          </View>
-
-                          <Pressable onPress={() => toggleTask(task.id)}>
-                            <Text
-                              style={[
-                                styles.activityTileTitle,
-                                { color: theme.textPrimary },
-                              ]}
-                              numberOfLines={2}
-                            >
-                              {task.title}
-                            </Text>
-                          </Pressable>
-
-                          {sourceNote ? (
-                            <Pressable
-                              onPress={() =>
-                                router.push({
-                                  pathname: '/(tabs)/notes',
-                                  params: { pageId: sourceNote.id },
-                                })
-                              }
-                              style={styles.noteOriginLink}
-                            >
-                              <FileText size={11} color={theme.accentPrimaryLink} />
-                              <Text
-                                style={[
-                                  styles.activityTileMeta,
-                                  { color: theme.accentPrimaryLink },
-                                ]}
-                                numberOfLines={1}
-                              >
-                                Nota: {sourceNote.title}
-                              </Text>
-                            </Pressable>
-                          ) : (
-                            <Text
-                              style={[
-                                styles.activityTileMeta,
-                                { color: theme.textSecondary },
-                              ]}
-                              numberOfLines={1}
-                            >
-                              {task.notes || 'Recordatorio activo'}
-                            </Text>
-                          )}
-                        </View>
-                      );
-                    })
+                        )}
+                      </View>
+                    );
+                  })
                   : null}
 
                 {/* Tarjeta punteada + Añadir */}
@@ -1447,7 +1518,7 @@ const styles = StyleSheet.create({
   },
   greetingSub: {
     fontSize: 13,
-    fontWeight: '500',
+    ...typography.bodyMedium,
   },
   headerControls: {
     flexDirection: 'row',
@@ -1467,7 +1538,7 @@ const styles = StyleSheet.create({
   searchInput: {
     flex: 1,
     fontSize: 13,
-    fontWeight: '500',
+    ...typography.bodyMedium,
   },
   syncPill: {
     flexDirection: 'row',
@@ -1480,14 +1551,16 @@ const styles = StyleSheet.create({
   },
   syncPillText: {
     fontSize: 12,
-    fontWeight: '600',
+    ...typography.bodySemiBold,
+  },
+  accountPillSurface: {
+    borderWidth: 1,
+    borderRadius: radii.pill,
   },
   accountPill: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 7,
-    borderWidth: 1,
-    borderRadius: radii.pill,
     paddingHorizontal: 11,
     height: 38,
   },
@@ -1504,7 +1577,7 @@ const styles = StyleSheet.create({
   },
   accountPillText: {
     fontSize: 12,
-    fontWeight: '600',
+    ...typography.bodySemiBold,
   },
   iconRoundBtn: {
     width: 38,
@@ -1653,9 +1726,11 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: spacing.sm,
   },
-  moduleTile: {
+  moduleTileSurface: {
     borderRadius: radii.md,
     borderWidth: 1,
+  },
+  moduleTile: {
     padding: spacing.md,
     gap: spacing.sm,
   },
@@ -1680,6 +1755,7 @@ const styles = StyleSheet.create({
   },
   moduleTileSub: {
     fontSize: 12,
+    ...typography.caption,
   },
   moduleTileStat: {
     fontSize: 12,
@@ -1945,6 +2021,7 @@ const styles = StyleSheet.create({
   },
   noteExcerpt: {
     fontSize: 12,
+    ...typography.caption,
   },
   noteTagPill: {
     paddingHorizontal: 9,

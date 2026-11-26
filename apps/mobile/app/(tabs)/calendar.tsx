@@ -22,6 +22,7 @@ import { useTheme } from '../../src/theme/ThemeContext';
 import { LiquidGlassCard } from '../../src/components/glass/LiquidGlassCard';
 import { MacIconBadge } from '../../src/components/glass/MacIconBadge';
 import { useCalendarSchedule } from '../../src/features/calendar';
+import { WeekDayLensPill } from '../../src/features/dashboard/CalendarDayCell';
 import { getTodayDateKey } from '../../src/db/client';
 import { authClient, resolveActiveUserId } from '../../src/services/authClient';
 
@@ -116,34 +117,15 @@ export default function CalendarScheduleScreen() {
           {weekDays.map((day) => {
             const isSelected = day.dateKey === selectedDateKey;
             return (
-              <Pressable
+              <WeekDayLensPill
                 key={day.dateKey}
-                onPress={() => setSelectedDateKey(day.dateKey)}
-                style={[
-                  styles.dayPill,
-                  {
-                    backgroundColor: isSelected ? theme.accentCobalt : theme.card,
-                    borderColor: isSelected ? theme.accentCobalt : theme.glassBorder,
-                  },
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.dayShortText,
-                    { color: isSelected ? 'rgba(255,255,255,0.8)' : theme.textSecondary },
-                  ]}
-                >
-                  {day.dayShort}
-                </Text>
-                <Text
-                  style={[
-                    styles.dayNumText,
-                    { color: isSelected ? '#FFFFFF' : theme.textPrimary },
-                  ]}
-                >
-                  {day.dayNum}
-                </Text>
-              </Pressable>
+                dateKey={day.dateKey}
+                dayShort={day.dayShort}
+                dayNum={day.dayNum}
+                isSelected={isSelected}
+                onSelect={setSelectedDateKey}
+                borderRadius={radii.md}
+              />
             );
           })}
         </ScrollView>
@@ -383,24 +365,9 @@ const styles = StyleSheet.create({
   },
   weekStrip: {
     gap: spacing.sm,
-    paddingVertical: 4,
-  },
-  dayPill: {
-    width: 58,
-    height: 68,
-    borderRadius: radii.md,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 4,
-  },
-  dayShortText: {
-    fontSize: 12,
-    fontWeight: '500',
-  },
-  dayNumText: {
-    fontSize: 17,
-    fontWeight: '700',
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+    overflow: 'visible',
   },
   creatorCard: {
     borderRadius: radii.lg,

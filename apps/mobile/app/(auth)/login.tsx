@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   KeyboardAvoidingView,
   Platform,
@@ -38,6 +38,44 @@ import {
 
 type ApiHealthState = 'checking' | 'online' | 'offline';
 
+function withTimeout<T>(
+  promise: Promise<T>,
+  ms: number,
+  code: string
+): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      const err = new Error(code) as Error & { code?: string };
+      err.code = code;
+      reject(err);
+    }, ms);
+  });
+  return Promise.race([promise, timeoutPromise]).finally(() => {
+    if (timer !== undefined) {
+      clearTimeout(timer);
+    }
+  });
+}
+
+function isNetworkOrTimeoutError(err: {
+  message?: string;
+  status?: number;
+  code?: string;
+}): boolean {
+  const msg = (err.message || '').toLowerCase();
+  const code = (err.code || '').toLowerCase();
+  return (
+    err.status === 0 ||
+    code === 'auth_timeout' ||
+    msg.includes('abort') ||
+    msg.includes('timeout') ||
+    msg.includes('failed to fetch') ||
+    msg.includes('network') ||
+    msg.includes('load failed')
+  );
+}
+
 function mapAuthErrorMessage(err: {
   message?: string;
   status?: number;
@@ -45,6 +83,10 @@ function mapAuthErrorMessage(err: {
 }): string {
   const msg = (err.message || '').toLowerCase();
   const code = (err.code || '').toLowerCase();
+
+  if (code === 'auth_timeout' || msg.includes('abort') || msg.includes('timeout')) {
+    return `El servidor (${API_BASE_URL}) tardó demasiado en responder. Verifica que "npm run dev:api" esté activo o continúa en Modo Local.`;
+  }
 
   if (
     err.status === 0 ||
@@ -73,6 +115,12 @@ function mapAuthErrorMessage(err: {
     return 'Origen de navegador no autorizado en Better Auth. Revisa TRUSTED_ORIGINS en apps/api.';
   }
 
+  if (err.status && err.status >= 500) {
+    return err.message
+      ? `Error interno del servidor (${err.status}): ${err.message}`
+      : `Error interno del servidor (${err.status}). Revisa el estado de apps/api y D1.`;
+  }
+
   return err.message || 'No se pudo completar la autenticación.';
 }
 
@@ -80,6 +128,7 @@ export default function LoginScreen() {
   const { theme, isDark, toggleTheme } = useTheme();
   const router = useRouter();
   const { refetch: refetchSession } = authClient.useSession();
+  const isMountedRef = useRef(true);
 
   const [isRegisterMode, setIsRegisterMode] = useState(false);
   const [name, setName] = useState('');
@@ -90,6 +139,13 @@ export default function LoginScreen() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [apiHealth, setApiHealth] = useState<ApiHealthState>('checking');
 
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
   const checkApiHealth = useCallback(async () => {
     setApiHealth('checking');
     try {
@@ -99,9 +155,13 @@ export default function LoginScreen() {
         signal: controller.signal,
       });
       clearTimeout(timeout);
-      setApiHealth(res.ok ? 'online' : 'offline');
+      if (isMountedRef.current) {
+        setApiHealth(res.ok ? 'online' : 'offline');
+      }
     } catch {
-      setApiHealth('offline');
+      if (isMountedRef.current) {
+        setApiHealth('offline');
+      }
     }
   }, []);
 
@@ -110,6 +170,8 @@ export default function LoginScreen() {
   }, [checkApiHealth]);
 
   const handleAuthSubmit = async () => {
+    if (isSubmitting) return;
+
     const cleanEmail = email.trim().toLowerCase();
     if (!cleanEmail || !cleanEmail.includes('@')) {
       setStatusMessage('Ingresa un correo electrónico válido.');
@@ -124,51 +186,85 @@ export default function LoginScreen() {
     setStatusMessage(null);
 
     try {
-      let authenticatedUserId: string | undefined;
+      const authPromise = isRegisterMode
+        ? authClient.signUp.email({
+            email: cleanEmail,
+            password,
+            name: name.trim() || cleanEmail.split('@')[0] || 'Usuario Organiza',
+          })
+        : authClient.signIn.email({
+            email: cleanEmail,
+            password,
+          });
 
-      if (isRegisterMode) {
-        const res = await authClient.signUp.email({
-          email: cleanEmail,
-          password,
-          name: name.trim() || cleanEmail.split('@')[0] || 'Usuario Organiza',
-        });
+      const res = await withTimeout(authPromise, 10000, 'AUTH_TIMEOUT');
 
-        if (res.error) {
+      if (res?.error) {
+        if (isMountedRef.current) {
           setStatusMessage(mapAuthErrorMessage(res.error));
-          setIsSubmitting(false);
-          return;
+          if (isNetworkOrTimeoutError(res.error)) {
+            setApiHealth('offline');
+          }
         }
-        authenticatedUserId = res.data?.user?.id;
-      } else {
-        const res = await authClient.signIn.email({
-          email: cleanEmail,
-          password,
-        });
+        return;
+      }
 
-        if (res.error) {
-          setStatusMessage(mapAuthErrorMessage(res.error));
-          setIsSubmitting(false);
-          return;
+      const authenticatedUserId = res?.data?.user?.id;
+      if (!authenticatedUserId) {
+        if (isMountedRef.current) {
+          setStatusMessage('No se recibió sesión válida del servidor.');
         }
-        authenticatedUserId = res.data?.user?.id;
+        return;
       }
 
       await setOfflineGuestPreference(false);
-      await refetchSession();
+      await withTimeout(
+        Promise.resolve(refetchSession()),
+        4000,
+        'SESSION_REFETCH_TIMEOUT'
+      ).catch(() => undefined);
 
-      if (authenticatedUserId) {
+      try {
         claimLocalRecordsForUser(authenticatedUserId);
-        void syncWithCloudflareD1();
+      } catch {
+        // Mantener navegación aunque falle la migración de registros locales
       }
+      void syncWithCloudflareD1();
 
-      setIsSubmitting(false);
+      if (isMountedRef.current) {
+        setApiHealth('online');
+      }
       router.replace('/(tabs)');
-    } catch {
-      setStatusMessage(
-        `No se pudo conectar al servidor (${API_BASE_URL}). Ejecuta "npm run dev:api" o continúa en Modo Local 0 ms.`
-      );
-      setApiHealth('offline');
-      setIsSubmitting(false);
+    } catch (error) {
+      const errObj =
+        error && typeof error === 'object'
+          ? (error as {
+              message?: string;
+              status?: number;
+              code?: string;
+              name?: string;
+            })
+          : { message: typeof error === 'string' ? error : undefined };
+
+      const normalizedErr = {
+        message: errObj.message || errObj.name,
+        status: errObj.status,
+        code: errObj.code,
+      };
+
+      if (isMountedRef.current) {
+        setStatusMessage(mapAuthErrorMessage(normalizedErr));
+        if (
+          normalizedErr.status === undefined ||
+          isNetworkOrTimeoutError(normalizedErr)
+        ) {
+          setApiHealth('offline');
+        }
+      }
+    } finally {
+      if (isMountedRef.current) {
+        setIsSubmitting(false);
+      }
     }
   };
 

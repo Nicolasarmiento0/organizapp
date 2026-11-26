@@ -17,6 +17,8 @@
     "db:generate": "npm --workspace=@organiza/api run db:generate",
     "db:migrate:local": "npm --workspace=@organiza/api run db:migrate:local",
     "db:migrate:remote": "npm --workspace=@organiza/api run db:migrate:remote",
+    "build:web": "npm --workspace=@organiza/mobile run build:web",
+    "deploy": "npm run build:web && npm --workspace=@organiza/api run deploy",
     "typecheck": "npm --workspaces --if-present run typecheck"
   },
   "engines": {

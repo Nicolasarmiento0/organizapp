@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   Image,
   Modal,
@@ -91,6 +91,15 @@ const CODE_FONT = Platform.select({
   default: 'monospace',
 });
 
+function syncWebTextareaHeight(node: TextInput | null, minHeight = 0) {
+  if (Platform.OS !== 'web' || !node) return;
+  const el = node as unknown as HTMLTextAreaElement | null;
+  if (!el || el.tagName !== 'TEXTAREA' || !el.style) return;
+  el.style.overflow = 'hidden';
+  el.style.height = '0px';
+  el.style.height = `${Math.max(el.scrollHeight, minHeight)}px`;
+}
+
 export const NoteBlockEditor: React.FC<NoteBlockEditorProps> = ({
   blocks,
   linkedTasksByBlockId,
@@ -105,9 +114,16 @@ export const NoteBlockEditor: React.FC<NoteBlockEditorProps> = ({
   );
   const [copiedBlockId, setCopiedBlockId] = useState<string | null>(null);
   const [lightboxBlock, setLightboxBlock] = useState<NoteBlock | null>(null);
+  const editorContainerRef = useRef<View>(null);
   const inputRefs = useRef<Record<string, TextInput | null>>({});
   const swipeableRefs = useRef<Record<string, Swipeable | null>>({});
   const pendingFocusIdRef = useRef<string | null>(null);
+  const lastFocusedWebElRef = useRef<{
+    el: HTMLInputElement | HTMLTextAreaElement;
+    start: number | null;
+    end: number | null;
+    blurredAt: number;
+  } | null>(null);
   const latestBlocksRef = useRef<NoteBlock[]>(blocks);
   latestBlocksRef.current = blocks;
 
@@ -118,6 +134,123 @@ export const NoteBlockEditor: React.FC<NoteBlockEditorProps> = ({
       pendingFocusIdRef.current = null;
     }
   }, [blocks]);
+
+  useLayoutEffect(() => {
+    if (Platform.OS !== 'web') return;
+    for (const block of blocks) {
+      syncWebTextareaHeight(
+        inputRefs.current[block.id] ?? null,
+        block.type === 'code' ? 54 : 0
+      );
+    }
+  }, [blocks]);
+
+  useEffect(() => {
+    if (
+      Platform.OS !== 'web' ||
+      typeof window === 'undefined' ||
+      typeof document === 'undefined'
+    ) {
+      return undefined;
+    }
+
+    const isInsideEditor = (node: EventTarget | null): node is HTMLInputElement | HTMLTextAreaElement => {
+      const root = editorContainerRef.current as unknown as HTMLElement | null;
+      if (!root || !(node instanceof HTMLElement)) return false;
+      const isTextControl =
+        node.tagName === 'TEXTAREA' || node.tagName === 'INPUT';
+      return isTextControl && root.contains(node);
+    };
+
+    const captureSelection = (el: HTMLInputElement | HTMLTextAreaElement) => {
+      try {
+        return { start: el.selectionStart, end: el.selectionEnd };
+      } catch {
+        return { start: null, end: null };
+      }
+    };
+
+    const handleFocusIn = (event: FocusEvent) => {
+      if (isInsideEditor(event.target)) {
+        const sel = captureSelection(event.target);
+        lastFocusedWebElRef.current = {
+          el: event.target,
+          start: sel.start,
+          end: sel.end,
+          blurredAt: 0,
+        };
+      }
+    };
+
+    const handleFocusOut = (event: FocusEvent) => {
+      const current = lastFocusedWebElRef.current;
+      if (current && event.target === current.el) {
+        const sel = captureSelection(current.el);
+        lastFocusedWebElRef.current = {
+          el: current.el,
+          start: sel.start ?? current.start,
+          end: sel.end ?? current.end,
+          blurredAt: Date.now(),
+        };
+      }
+    };
+
+    const handleCapsLockEvent = (event: KeyboardEvent) => {
+      if (event.key !== 'CapsLock' && event.code !== 'CapsLock') return;
+
+      const active = document.activeElement;
+      const tracked = lastFocusedWebElRef.current;
+      let targetEl: HTMLInputElement | HTMLTextAreaElement | null = null;
+      let sel: { start: number | null; end: number | null } = {
+        start: null,
+        end: null,
+      };
+
+      if (isInsideEditor(active)) {
+        targetEl = active;
+        sel = captureSelection(active);
+      } else if (
+        tracked &&
+        tracked.el.isConnected &&
+        Date.now() - tracked.blurredAt < 250 &&
+        (active === null || active === document.body)
+      ) {
+        targetEl = tracked.el;
+        sel = { start: tracked.start, end: tracked.end };
+      }
+
+      if (!targetEl) return;
+
+      const restoreFocus = () => {
+        if (!targetEl || !targetEl.isConnected) return;
+        const nowActive = document.activeElement;
+        if (nowActive === null || nowActive === document.body) {
+          targetEl.focus({ preventScroll: true });
+          if (sel.start !== null && sel.end !== null) {
+            try {
+              targetEl.setSelectionRange(sel.start, sel.end);
+            } catch {
+              // Ignorar si el input no soporta setSelectionRange
+            }
+          }
+        }
+      };
+
+      requestAnimationFrame(restoreFocus);
+      window.setTimeout(restoreFocus, 40);
+    };
+
+    document.addEventListener('focusin', handleFocusIn, true);
+    document.addEventListener('focusout', handleFocusOut, true);
+    window.addEventListener('keydown', handleCapsLockEvent, true);
+    window.addEventListener('keyup', handleCapsLockEvent, true);
+    return () => {
+      document.removeEventListener('focusin', handleFocusIn, true);
+      document.removeEventListener('focusout', handleFocusOut, true);
+      window.removeEventListener('keydown', handleCapsLockEvent, true);
+      window.removeEventListener('keyup', handleCapsLockEvent, true);
+    };
+  }, []);
 
   const bodyTextColor = headingColor;
 
@@ -262,19 +395,19 @@ export const NoteBlockEditor: React.FC<NoteBlockEditorProps> = ({
   };
 
   const handleTextChange = (index: number, block: NoteBlock, rawText: string) => {
-    if (block.type !== 'callout' && block.type !== 'code' && rawText.includes('\n')) {
+    if (block.type === 'checklist' && rawText.includes('\n')) {
       const nlIdx = rawText.indexOf('\n');
       const before = rawText.slice(0, nlIdx);
       const after = rawText.slice(nlIdx + 1);
 
-      if (block.type === 'checklist' && !before.trim() && !after.trim()) {
+      if (!before.trim() && !after.trim()) {
+        pendingFocusIdRef.current = block.id;
+        setFocusedBlockId(block.id);
         updateBlockAt(index, { type: 'paragraph', text: '', checked: undefined });
         return;
       }
 
-      const nextType: NoteBlockType =
-        block.type === 'checklist' ? 'checklist' : 'paragraph';
-      const created = createBlock(nextType, { text: after });
+      const created = createBlock('checklist', { text: after });
       const next = [
         ...blocks.slice(0, index),
         { ...block, text: before },
@@ -289,6 +422,7 @@ export const NoteBlockEditor: React.FC<NoteBlockEditorProps> = ({
 
     const transformed = detectLiveMarkdownShortcut(block, rawText);
     if (transformed) {
+      pendingFocusIdRef.current = transformed.id;
       const next = blocks.map((b, i) => (i === index ? transformed : b));
       onChangeBlocks(next);
       return;
@@ -350,7 +484,7 @@ export const NoteBlockEditor: React.FC<NoteBlockEditorProps> = ({
   );
 
   return (
-    <View style={styles.container}>
+    <View ref={editorContainerRef} style={styles.container}>
       {/* Pista discreta de atajos Markdown */}
       <View
         style={[
@@ -388,7 +522,8 @@ export const NoteBlockEditor: React.FC<NoteBlockEditorProps> = ({
           const showSlashMenu =
             isFocused &&
             block.type === 'paragraph' &&
-            block.text.startsWith('/');
+            block.text.startsWith('/') &&
+            !block.text.includes('\n');
           const slashQuery = showSlashMenu
             ? block.text.slice(1).toLowerCase().trim()
             : '';
@@ -800,13 +935,22 @@ export const NoteBlockEditor: React.FC<NoteBlockEditorProps> = ({
                   <TextInput
                     ref={(el) => {
                       inputRefs.current[block.id] = el;
+                      syncWebTextareaHeight(el, 54);
                     }}
                     value={block.text}
                     onFocus={() => setFocusedBlockId(block.id)}
-                    onChangeText={(txt) => handleTextChange(index, block, txt)}
+                    onChangeText={(txt) => {
+                      handleTextChange(index, block, txt);
+                      if (Platform.OS === 'web') {
+                        requestAnimationFrame(() =>
+                          syncWebTextareaHeight(inputRefs.current[block.id] ?? null, 54)
+                        );
+                      }
+                    }}
                     placeholder="// Escribe código o comandos aquí..."
                     placeholderTextColor="#6E7480"
                     multiline
+                    blurOnSubmit={false}
                     textAlignVertical="top"
                     style={[styles.codeInput, { fontFamily: CODE_FONT }]}
                   />
@@ -861,13 +1005,23 @@ export const NoteBlockEditor: React.FC<NoteBlockEditorProps> = ({
                     <TextInput
                       ref={(el) => {
                         inputRefs.current[block.id] = el;
+                        syncWebTextareaHeight(el);
                       }}
                       value={block.text}
                       onFocus={() => setFocusedBlockId(block.id)}
-                      onChangeText={(txt) => handleTextChange(index, block, txt)}
+                      onChangeText={(txt) => {
+                        handleTextChange(index, block, txt);
+                        if (Platform.OS === 'web') {
+                          requestAnimationFrame(() =>
+                            syncWebTextareaHeight(inputRefs.current[block.id] ?? null)
+                          );
+                        }
+                      }}
                       placeholder="Idea destacada o recordatorio visual..."
                       placeholderTextColor={theme.textMuted}
                       multiline
+                      numberOfLines={Platform.OS === 'web' ? 1 : undefined}
+                      blurOnSubmit={false}
                       style={[styles.calloutInput, { color: bodyTextColor }]}
                     />
                   </View>
@@ -903,13 +1057,22 @@ export const NoteBlockEditor: React.FC<NoteBlockEditorProps> = ({
                     <TextInput
                       ref={(el) => {
                         inputRefs.current[block.id] = el;
+                        syncWebTextareaHeight(el);
                       }}
                       value={block.text}
                       onFocus={() => setFocusedBlockId(block.id)}
-                      onChangeText={(txt) => handleTextChange(index, block, txt)}
+                      onChangeText={(txt) => {
+                        handleTextChange(index, block, txt);
+                        if (Platform.OS === 'web') {
+                          requestAnimationFrame(() =>
+                            syncWebTextareaHeight(inputRefs.current[block.id] ?? null)
+                          );
+                        }
+                      }}
                       placeholder="Tarea dentro de esta nota..."
                       placeholderTextColor={theme.textMuted}
                       multiline
+                      numberOfLines={Platform.OS === 'web' ? 1 : undefined}
                       blurOnSubmit={false}
                       style={[
                         styles.checklistInput,
@@ -948,13 +1111,22 @@ export const NoteBlockEditor: React.FC<NoteBlockEditorProps> = ({
                 <TextInput
                   ref={(el) => {
                     inputRefs.current[block.id] = el;
+                    syncWebTextareaHeight(el);
                   }}
                   value={block.text}
                   onFocus={() => setFocusedBlockId(block.id)}
-                  onChangeText={(txt) => handleTextChange(index, block, txt)}
+                  onChangeText={(txt) => {
+                    handleTextChange(index, block, txt);
+                    if (Platform.OS === 'web') {
+                      requestAnimationFrame(() =>
+                        syncWebTextareaHeight(inputRefs.current[block.id] ?? null)
+                      );
+                    }
+                  }}
                   placeholder={placeholderText}
                   placeholderTextColor={theme.textMuted}
                   multiline
+                  numberOfLines={Platform.OS === 'web' ? 1 : undefined}
                   blurOnSubmit={false}
                   style={[typographyStyle, { color: bodyTextColor }]}
                 />
@@ -1010,11 +1182,12 @@ export const NoteBlockEditor: React.FC<NoteBlockEditorProps> = ({
           };
 
           const content = renderInnerBlock();
-          const swipeEnabled =
-            (block.type === 'paragraph' || block.type === 'checklist') &&
-            block.text.trim().length > 0;
+          const supportsSwipe =
+            Platform.OS !== 'web' &&
+            (block.type === 'paragraph' || block.type === 'checklist');
+          const swipeEnabled = supportsSwipe && block.text.trim().length > 0;
 
-          if (!swipeEnabled) {
+          if (!supportsSwipe) {
             return (
               <View key={block.id} style={styles.blockRowShell}>
                 {content}
@@ -1028,6 +1201,7 @@ export const NoteBlockEditor: React.FC<NoteBlockEditorProps> = ({
               ref={(el) => {
                 swipeableRefs.current[block.id] = el;
               }}
+              enabled={swipeEnabled}
               overshootLeft={false}
               leftThreshold={48}
               onSwipeableOpen={(direction) => {
@@ -1036,18 +1210,22 @@ export const NoteBlockEditor: React.FC<NoteBlockEditorProps> = ({
                   swipeableRefs.current[block.id]?.close();
                 }
               }}
-              renderLeftActions={() => (
-                <View
-                  style={[
-                    styles.swipeHoyAction,
-                    { backgroundColor: theme.accentPrimary },
-                  ]}
-                >
-                  <ListCheck size={16} color="#FFFFFF" />
-                  <Text style={styles.swipeHoyText}>Enviar a Hoy</Text>
-                  <ArrowRight size={14} color="#FFFFFF" strokeWidth={2.2} />
-                </View>
-              )}
+              renderLeftActions={
+                swipeEnabled
+                  ? () => (
+                      <View
+                        style={[
+                          styles.swipeHoyAction,
+                          { backgroundColor: theme.accentPrimary },
+                        ]}
+                      >
+                        <ListCheck size={16} color="#FFFFFF" />
+                        <Text style={styles.swipeHoyText}>Enviar a Hoy</Text>
+                        <ArrowRight size={14} color="#FFFFFF" strokeWidth={2.2} />
+                      </View>
+                    )
+                  : undefined
+              }
             >
               <View
                 style={[
@@ -1169,9 +1347,10 @@ const styles = StyleSheet.create({
   hintText: {
     fontSize: 11,
     lineHeight: 16,
+    ...typography.caption,
   },
   hintCode: {
-    fontWeight: '700',
+    ...typography.bodySemiBold,
   },
   blocksList: {
     gap: 8,
@@ -1203,9 +1382,9 @@ const styles = StyleSheet.create({
   },
   paragraphInput: {
     fontSize: 15,
-    fontWeight: '400',
-    lineHeight: 23,
+    lineHeight: 24,
     paddingVertical: 3,
+    ...typography.body,
   },
   checklistRow: {
     flexDirection: 'row',
@@ -1228,6 +1407,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 23,
     paddingVertical: 0,
+    ...typography.body,
   },
   strikethroughText: {
     textDecorationLine: 'line-through',
@@ -1265,8 +1445,8 @@ const styles = StyleSheet.create({
   calloutInput: {
     fontSize: 14,
     lineHeight: 21,
-    fontWeight: '500',
     paddingVertical: 2,
+    ...typography.bodyMedium,
   },
   codeCard: {
     borderRadius: radii.lg,
@@ -1376,6 +1556,7 @@ const styles = StyleSheet.create({
   captionInput: {
     fontSize: 12,
     paddingVertical: 2,
+    ...typography.caption,
   },
   imagePickEmpty: {
     alignItems: 'center',
@@ -1551,7 +1732,7 @@ const styles = StyleSheet.create({
   },
   addBarChipText: {
     fontSize: 11,
-    fontWeight: '600',
+    ...typography.bodyMedium,
   },
   lightboxBackdrop: {
     flex: 1,

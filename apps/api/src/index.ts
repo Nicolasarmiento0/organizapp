@@ -44,7 +44,13 @@ app.use(
   '/api/*',
   cors({
     origin: (origin) => origin || '*',
-    allowHeaders: ['Content-Type', 'Authorization', 'Cookie', 'expo-origin'],
+    allowHeaders: [
+      'Content-Type',
+      'Authorization',
+      'Cookie',
+      'expo-origin',
+      'X-Requested-With',
+    ],
     allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     exposeHeaders: ['Content-Length', 'Set-Cookie'],
     maxAge: 86400,
@@ -587,6 +593,13 @@ app.get('/api/media/*', async (c) => {
     status: 200,
     headers,
   });
+});
+
+app.all('*', async (c) => {
+  if (c.env.ASSETS) {
+    return c.env.ASSETS.fetch(c.req.raw);
+  }
+  return c.notFound();
 });
 
 export default app;

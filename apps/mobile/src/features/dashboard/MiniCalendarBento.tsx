@@ -4,6 +4,7 @@ import { ArrowRight, ChevronLeft, ChevronRight } from '../../components/icons';
 import { radii, spacing, typography } from '../../theme/tokens';
 import { useTheme } from '../../theme/ThemeContext';
 import { LiquidGlassCard } from '../../components/glass/LiquidGlassCard';
+import { CalendarDayCell } from './CalendarDayCell';
 import type { CalendarMonthRef } from './useDashboardData';
 
 const WEEKDAY_HEADERS = ['LUN', 'MAR', 'MIÉ', 'JUE', 'VIE', 'SÁB', 'DOM'] as const;
@@ -170,59 +171,16 @@ export const MiniCalendarBento: React.FC<MiniCalendarBentoProps> = ({
               const hasActivity = activeDaysInMonth.has(cell.dateKey);
 
               return (
-                <Pressable
+                <CalendarDayCell
                   key={cell.dateKey}
-                  onPress={() => onSelectDate(cell.dateKey)}
-                  style={[
-                    styles.dayCell,
-                    cell.inCurrentMonth
-                      ? {
-                          backgroundColor: theme.card,
-                          borderWidth: 1,
-                          borderColor: theme.glassBorder,
-                        }
-                      : {
-                          backgroundColor: 'transparent',
-                          borderWidth: 1,
-                          borderStyle: 'dashed',
-                          borderColor: theme.divider,
-                        },
-                    isToday &&
-                      !isSelected && {
-                        borderWidth: 1.5,
-                        borderColor: theme.accentPrimary,
-                      },
-                    isSelected && {
-                      backgroundColor: theme.accentPrimary,
-                      borderWidth: 0,
-                    },
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.dayNumber,
-                      {
-                        color: cell.inCurrentMonth
-                          ? theme.textPrimary
-                          : theme.textMuted,
-                      },
-                      isSelected && {
-                        color: theme.accentPrimaryText,
-                        fontWeight: '800',
-                      },
-                    ]}
-                  >
-                    {cell.dayNumber}
-                  </Text>
-                  {hasActivity && !isSelected ? (
-                    <View
-                      style={[
-                        styles.activityDot,
-                        { backgroundColor: theme.accentPrimary },
-                      ]}
-                    />
-                  ) : null}
-                </Pressable>
+                  dateKey={cell.dateKey}
+                  dayNumber={cell.dayNumber}
+                  inCurrentMonth={cell.inCurrentMonth}
+                  isSelected={isSelected}
+                  isToday={isToday}
+                  hasActivity={hasActivity}
+                  onSelectDate={onSelectDate}
+                />
               );
             })}
           </View>
@@ -258,8 +216,8 @@ const styles = StyleSheet.create({
   },
   monthText: {
     fontSize: 12,
-    fontWeight: '500',
     marginTop: 2,
+    ...typography.bodyMedium,
   },
   controlsRow: {
     flexDirection: 'row',
@@ -273,7 +231,7 @@ const styles = StyleSheet.create({
   },
   todayChipText: {
     fontSize: 11,
-    fontWeight: '700',
+    ...typography.bodyBold,
   },
   navIconBtn: {
     width: 28,
@@ -296,30 +254,12 @@ const styles = StyleSheet.create({
   },
   grid: {
     gap: 6,
+    overflow: 'visible',
   },
   gridRow: {
     flexDirection: 'row',
     gap: 6,
-  },
-  dayCell: {
-    flex: 1,
-    aspectRatio: 1,
-    maxHeight: 38,
-    borderRadius: 999,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  dayNumber: {
-    fontSize: 12,
-    fontWeight: '600',
-    fontVariant: ['tabular-nums'],
-  },
-  activityDot: {
-    position: 'absolute',
-    bottom: 4,
-    width: 4,
-    height: 4,
-    borderRadius: 2,
+    overflow: 'visible',
   },
   footerLink: {
     flexDirection: 'row',
@@ -330,7 +270,7 @@ const styles = StyleSheet.create({
   },
   footerLinkText: {
     fontSize: 12,
-    fontWeight: '600',
+    ...typography.bodySemiBold,
   },
 });
 

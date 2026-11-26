@@ -29,6 +29,10 @@ import {
 } from '../../src/theme/tokens';
 import { useTheme } from '../../src/theme/ThemeContext';
 import { LiquidGlassCard } from '../../src/components/glass/LiquidGlassCard';
+import {
+  LiquidGlassRailCapsule,
+  type RailCapsuleItem,
+} from '../../src/components/glass/LiquidGlassBubble';
 import { QuickCaptureSheet } from '../../src/components/glass/QuickCaptureSheet';
 import {
   QuickCaptureProvider,
@@ -118,114 +122,88 @@ function DesktopIconRail({
   const router = useRouter();
   const initials = getUserInitials(userName, userEmail);
 
+  const navItems: RailCapsuleItem[] = NAV_ITEMS.map((item) => {
+    const isActive = item.matchPaths.includes(pathname);
+    const IconComp = item.icon;
+    return {
+      id: item.routeName,
+      isActive,
+      backgroundColor: isActive ? theme.accentPrimary : theme.pillBg,
+      accessibilityRole: 'tab',
+      accessibilityLabel: item.label,
+      onPress: () => router.push(item.href),
+      renderIcon: ({ hovered }) => (
+        <IconComp
+          size={20}
+          color={
+            isActive
+              ? theme.accentPrimaryText
+              : hovered
+                ? theme.textPrimary
+                : theme.textSecondary
+          }
+          strokeWidth={isActive ? 2.1 : iconMetrics.strokeWidth}
+        />
+      ),
+    };
+  });
+
+  const utilityItems: RailCapsuleItem[] = [
+    {
+      id: 'quick-capture',
+      backgroundColor: theme.accentVolt,
+      accessibilityRole: 'button',
+      accessibilityLabel: 'Captura rápida',
+      onPress: () => openQuickCapture('task'),
+      renderIcon: () => (
+        <Plus size={20} color={theme.accentVoltText} strokeWidth={2.2} />
+      ),
+    },
+    {
+      id: 'theme-toggle',
+      backgroundColor: theme.pillBg,
+      accessibilityRole: 'button',
+      accessibilityLabel: isDark
+        ? 'Cambiar a Titanium Light'
+        : 'Cambiar a Titanium Dark',
+      onPress: toggleTheme,
+      renderIcon: () =>
+        isDark ? (
+          <Sun size={19} color={theme.textPrimary} strokeWidth={1.85} />
+        ) : (
+          <Moon size={19} color={theme.textPrimary} strokeWidth={1.85} />
+        ),
+    },
+    {
+      id: 'account',
+      backgroundColor: hasSession ? theme.accentPrimarySoft : theme.pillBg,
+      borderWidth: hasSession ? 1 : 0,
+      borderColor: theme.accentPrimaryBorder,
+      accessibilityRole: 'button',
+      accessibilityLabel: 'Cuenta y sincronización Cloud',
+      onPress: openAccountSheet,
+      renderIcon: ({ hovered }) =>
+        hasSession ? (
+          <Text style={[styles.railInitials, { color: theme.accentPrimaryLink }]}>
+            {initials}
+          </Text>
+        ) : (
+          <User
+            size={19}
+            color={hovered ? theme.textPrimary : theme.textSecondary}
+            strokeWidth={1.85}
+          />
+        ),
+    },
+  ];
+
   return (
     <View style={[styles.railColumn, { backgroundColor: theme.canvas }]}>
-      {/* Cápsula vertical principal con botones circulares */}
-      <View
-        style={[
-          styles.railCapsule,
-          {
-            backgroundColor: theme.railBg,
-            borderColor: theme.glassBorder,
-          },
-          shadows.floatingDock,
-        ]}
-      >
-        {NAV_ITEMS.map((item) => {
-          const isActive = item.matchPaths.includes(pathname);
-          const IconComp = item.icon;
+      {/* Cápsula vertical principal con burbuja Liquid Glass deslizante */}
+      <LiquidGlassRailCapsule items={navItems} shadowStyle={shadows.floatingDock} />
 
-          return (
-            <Pressable
-              key={item.routeName}
-              onPress={() => router.push(item.href)}
-              accessibilityRole="tab"
-              accessibilityLabel={item.label}
-              accessibilityState={{ selected: isActive }}
-              style={({ pressed }) => [
-                styles.railCircleBtn,
-                {
-                  backgroundColor: isActive ? theme.accentPrimary : theme.pillBg,
-                },
-                pressed && { opacity: 0.82, transform: [{ scale: 0.96 }] },
-              ]}
-            >
-              <IconComp
-                size={20}
-                color={isActive ? theme.accentPrimaryText : theme.textSecondary}
-                strokeWidth={isActive ? 2.1 : iconMetrics.strokeWidth}
-              />
-            </Pressable>
-          );
-        })}
-      </View>
-
-      {/* Cápsula inferior de utilidades */}
-      <View
-        style={[
-          styles.railCapsule,
-          {
-            backgroundColor: theme.railBg,
-            borderColor: theme.glassBorder,
-          },
-          shadows.subtle,
-        ]}
-      >
-        <Pressable
-          onPress={() => openQuickCapture('task')}
-          accessibilityRole="button"
-          accessibilityLabel="Captura rápida"
-          style={({ pressed }) => [
-            styles.railCircleBtn,
-            { backgroundColor: theme.accentVolt },
-            pressed && { opacity: 0.86, transform: [{ scale: 0.96 }] },
-          ]}
-        >
-          <Plus size={20} color={theme.accentVoltText} strokeWidth={2.2} />
-        </Pressable>
-
-        <Pressable
-          onPress={toggleTheme}
-          accessibilityRole="button"
-          accessibilityLabel={
-            isDark ? 'Cambiar a Titanium Light' : 'Cambiar a Titanium Dark'
-          }
-          style={({ pressed }) => [
-            styles.railCircleBtn,
-            { backgroundColor: theme.pillBg },
-            pressed && { opacity: 0.8 },
-          ]}
-        >
-          {isDark ? (
-            <Sun size={19} color={theme.textPrimary} strokeWidth={1.85} />
-          ) : (
-            <Moon size={19} color={theme.textPrimary} strokeWidth={1.85} />
-          )}
-        </Pressable>
-
-        <Pressable
-          onPress={openAccountSheet}
-          accessibilityRole="button"
-          accessibilityLabel="Cuenta y sincronización Cloud"
-          style={({ pressed }) => [
-            styles.railCircleBtn,
-            {
-              backgroundColor: hasSession ? theme.accentPrimarySoft : theme.pillBg,
-              borderWidth: hasSession ? 1 : 0,
-              borderColor: theme.accentPrimaryBorder,
-            },
-            pressed && { opacity: 0.8 },
-          ]}
-        >
-          {hasSession ? (
-            <Text style={[styles.railInitials, { color: theme.accentPrimaryLink }]}>
-              {initials}
-            </Text>
-          ) : (
-            <User size={19} color={theme.textSecondary} strokeWidth={1.85} />
-          )}
-        </Pressable>
-      </View>
+      {/* Cápsula inferior de utilidades con burbuja Liquid Glass deslizante */}
+      <LiquidGlassRailCapsule items={utilityItems} shadowStyle={shadows.subtle} />
     </View>
   );
 }
@@ -403,20 +381,6 @@ const styles = StyleSheet.create({
     paddingVertical: 20,
     alignItems: 'center',
     justifyContent: 'space-between',
-  },
-  railCapsule: {
-    borderRadius: 999,
-    borderWidth: 1,
-    padding: 8,
-    gap: 10,
-    alignItems: 'center',
-  },
-  railCircleBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   railInitials: {
     fontSize: 13,
