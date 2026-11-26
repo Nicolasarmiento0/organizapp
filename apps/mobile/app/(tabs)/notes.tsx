@@ -270,14 +270,14 @@ export default function NotesWorkspaceScreen() {
         const finalized = after.draftBlocks.map((b) =>
           b.id === imgBlock.id
             ? {
-                ...b,
-                imageUrl: uploaded.url,
-                imageKey: uploaded.key || undefined,
-                imageSizeKb: Math.max(1, Math.round(uploaded.sizeBytes / 1024)),
-                imageStatus: uploaded.uploadedToR2
-                  ? ('r2' as const)
-                  : ('local' as const),
-              }
+              ...b,
+              imageUrl: uploaded.url,
+              imageKey: uploaded.key || undefined,
+              imageSizeKb: Math.max(1, Math.round(uploaded.sizeBytes / 1024)),
+              imageStatus: uploaded.uploadedToR2
+                ? ('r2' as const)
+                : ('local' as const),
+            }
             : b
         );
         setDraftBlocks(finalized);
@@ -447,7 +447,7 @@ export default function NotesWorkspaceScreen() {
 
               <View style={styles.headerTitleCol}>
                 <Text style={[styles.phaseTag, { color: theme.accentPrimaryLink }]}>
-                  NOTION + OBSIDIAN • CLOUD SYNC
+                  Mis ideas
                 </Text>
                 <Text style={[styles.screenTitle, { color: theme.textPrimary }]}>
                   Notas & Documentos
