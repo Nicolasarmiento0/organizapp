@@ -64,8 +64,24 @@ app.get('/api/health', (c) => {
  * Endpoints de Autenticación Better Auth + @better-auth/expo ($0)
  */
 app.on(['GET', 'POST'], '/api/auth/*', async (c) => {
-  const auth = createAuth(c.env);
-  return auth.handler(c.req.raw);
+  try {
+    const auth = createAuth(c.env);
+    return await auth.handler(c.req.raw);
+  } catch (error) {
+    logEvent('error', 'auth_handler_error', {
+      path: c.req.path,
+      method: c.req.method,
+      message: error instanceof Error ? error.message : 'Unknown auth error',
+    });
+    return c.json(
+      {
+        ok: false,
+        error: 'AUTH_INTERNAL_ERROR',
+        message: error instanceof Error ? error.message : 'Error interno de autenticación',
+      },
+      500
+    );
+  }
 });
 
 /**

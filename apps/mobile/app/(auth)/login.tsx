@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   KeyboardAvoidingView,
   Platform,
@@ -13,37 +13,110 @@ import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   ArrowRight,
-  Cloud,
   Database,
+  Eye,
+  EyeOff,
   Lock,
   Mail,
-  ShieldCheck,
+  Moon,
+  RefreshCw,
+  Sun,
   User,
 } from 'lucide-react-native';
 import { iconMetrics, radii, spacing } from '../../src/theme/tokens';
 import { useTheme } from '../../src/theme/ThemeContext';
 import { LiquidGlassCard } from '../../src/components/glass/LiquidGlassCard';
-import { MacIconBadge } from '../../src/components/glass/MacIconBadge';
 import {
+  API_BASE_URL,
   authClient,
   setOfflineGuestPreference,
 } from '../../src/services/authClient';
-import { syncWithCloudflareD1 } from '../../src/db/sync';
+import {
+  claimLocalRecordsForUser,
+  syncWithCloudflareD1,
+} from '../../src/db/sync';
+
+type ApiHealthState = 'checking' | 'online' | 'offline';
+
+function mapAuthErrorMessage(err: {
+  message?: string;
+  status?: number;
+  code?: string;
+}): string {
+  const msg = (err.message || '').toLowerCase();
+  const code = (err.code || '').toLowerCase();
+
+  if (
+    err.status === 0 ||
+    msg.includes('failed to fetch') ||
+    msg.includes('network') ||
+    msg.includes('load failed')
+  ) {
+    return `No se pudo conectar al servidor (${API_BASE_URL}). Ejecuta "npm run dev:api" o continúa en Modo Local.`;
+  }
+
+  if (
+    msg.includes('already exists') ||
+    code.includes('user_already_exists')
+  ) {
+    return 'Ya existe una cuenta con este correo. Prueba Iniciar Sesión.';
+  }
+
+  if (
+    msg.includes('invalid email or password') ||
+    code.includes('invalid_email_or_password')
+  ) {
+    return 'Correo o contraseña incorrectos.';
+  }
+
+  if (msg.includes('invalid origin') || code.includes('invalid_origin')) {
+    return 'Origen de navegador no autorizado en Better Auth. Revisa TRUSTED_ORIGINS en apps/api.';
+  }
+
+  return err.message || 'No se pudo completar la autenticación.';
+}
 
 export default function LoginScreen() {
-  const { theme } = useTheme();
+  const { theme, isDark, toggleTheme } = useTheme();
   const router = useRouter();
+  const { refetch: refetchSession } = authClient.useSession();
+
   const [isRegisterMode, setIsRegisterMode] = useState(false);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [apiHealth, setApiHealth] = useState<ApiHealthState>('checking');
+
+  const checkApiHealth = useCallback(async () => {
+    setApiHealth('checking');
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 3500);
+      const res = await fetch(`${API_BASE_URL}/api/health`, {
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+      setApiHealth(res.ok ? 'online' : 'offline');
+    } catch {
+      setApiHealth('offline');
+    }
+  }, []);
+
+  useEffect(() => {
+    void checkApiHealth();
+  }, [checkApiHealth]);
 
   const handleAuthSubmit = async () => {
     const cleanEmail = email.trim().toLowerCase();
-    if (!cleanEmail || password.length < 8) {
-      setStatusMessage('Ingresa un email válido y contraseña de mínimo 8 caracteres.');
+    if (!cleanEmail || !cleanEmail.includes('@')) {
+      setStatusMessage('Ingresa un correo electrónico válido.');
+      return;
+    }
+    if (password.length < 8) {
+      setStatusMessage('La contraseña debe tener al menos 8 caracteres.');
       return;
     }
 
@@ -51,18 +124,21 @@ export default function LoginScreen() {
     setStatusMessage(null);
 
     try {
+      let authenticatedUserId: string | undefined;
+
       if (isRegisterMode) {
         const res = await authClient.signUp.email({
           email: cleanEmail,
           password,
-          name: name.trim() || 'Usuario Organiza',
+          name: name.trim() || cleanEmail.split('@')[0] || 'Usuario Organiza',
         });
 
         if (res.error) {
-          setStatusMessage(res.error.message || 'No se pudo completar el registro.');
+          setStatusMessage(mapAuthErrorMessage(res.error));
           setIsSubmitting(false);
           return;
         }
+        authenticatedUserId = res.data?.user?.id;
       } else {
         const res = await authClient.signIn.email({
           email: cleanEmail,
@@ -70,20 +146,28 @@ export default function LoginScreen() {
         });
 
         if (res.error) {
-          setStatusMessage(res.error.message || 'Credenciales inválidas.');
+          setStatusMessage(mapAuthErrorMessage(res.error));
           setIsSubmitting(false);
           return;
         }
+        authenticatedUserId = res.data?.user?.id;
       }
 
       await setOfflineGuestPreference(false);
-      void syncWithCloudflareD1();
+      await refetchSession();
+
+      if (authenticatedUserId) {
+        claimLocalRecordsForUser(authenticatedUserId);
+        void syncWithCloudflareD1();
+      }
+
       setIsSubmitting(false);
       router.replace('/(tabs)');
     } catch {
       setStatusMessage(
-        'Servidor Cloudflare Edge no disponible aún. Puedes continuar en Modo Local 0 ms.'
+        `No se pudo conectar al servidor (${API_BASE_URL}). Ejecuta "npm run dev:api" o continúa en Modo Local 0 ms.`
       );
+      setApiHealth('offline');
       setIsSubmitting(false);
     }
   };
@@ -103,27 +187,95 @@ export default function LoginScreen() {
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
         >
-          {/* Cabecera Arquitectónica */}
+          {/* Barra superior discreta */}
+          <View style={styles.topBar}>
+            <View
+              style={[
+                styles.brandMonogram,
+                {
+                  backgroundColor: theme.card,
+                  borderColor: theme.glassBorder,
+                },
+              ]}
+            >
+              <Text style={[styles.brandMonogramText, { color: theme.textPrimary }]}>
+                O
+              </Text>
+            </View>
+
+            <View style={styles.topRightRow}>
+              <Pressable
+                onPress={() => void checkApiHealth()}
+                style={[
+                  styles.healthPill,
+                  {
+                    backgroundColor: theme.card,
+                    borderColor: theme.glassBorder,
+                  },
+                ]}
+              >
+                <View
+                  style={[
+                    styles.healthDot,
+                    {
+                      backgroundColor:
+                        apiHealth === 'online'
+                          ? theme.success
+                          : apiHealth === 'offline'
+                            ? theme.danger
+                            : theme.warning,
+                    },
+                  ]}
+                />
+                <Text style={[styles.healthText, { color: theme.textSecondary }]}>
+                  {apiHealth === 'online'
+                    ? 'API Conectada'
+                    : apiHealth === 'offline'
+                      ? 'API Offline · Reintentar'
+                      : 'Verificando API...'}
+                </Text>
+                {apiHealth === 'offline' ? (
+                  <RefreshCw size={12} color={theme.textSecondary} strokeWidth={2} />
+                ) : null}
+              </Pressable>
+
+              <Pressable
+                onPress={toggleTheme}
+                style={[
+                  styles.themeBtn,
+                  {
+                    backgroundColor: theme.card,
+                    borderColor: theme.glassBorder,
+                  },
+                ]}
+                accessibilityLabel="Cambiar apariencia"
+              >
+                {isDark ? (
+                  <Sun size={16} color={theme.textPrimary} strokeWidth={1.9} />
+                ) : (
+                  <Moon size={16} color={theme.textPrimary} strokeWidth={1.9} />
+                )}
+              </Pressable>
+            </View>
+          </View>
+
+          {/* Cabecera Titanium Monochrome */}
           <View style={styles.heroSection}>
-            <MacIconBadge
-              icon={ShieldCheck}
-              module="dashboard"
-              containerSize={52}
-              size={26}
-            />
-            <Text style={[styles.brandTag, { color: theme.accentCobaltBright }]}>
-              ORGANIZA · EDGE OS
+            <Text style={[styles.brandTag, { color: theme.textSecondary }]}>
+              ORGANIZA OS · TITANIUM
             </Text>
             <Text style={[styles.heroTitle, { color: theme.textPrimary }]}>
-              Productividad Local-First con Sincronización en Cloudflare D1
+              {isRegisterMode
+                ? 'Crea tu cuenta personal'
+                : 'Inicia sesión en tu Workspace'}
             </Text>
             <Text style={[styles.heroSubtitle, { color: theme.textSecondary }]}>
-              Tus hábitos, recordatorios, horarios y notas viven en SQLite local (0 ms)
-              y se respaldan en segundo plano con Better Auth ($0 USD).
+              Agenda macOS, recordatorios con avisos, hábitos con premios y notas
+              estilo Notion sincronizados con Cloudflare D1.
             </Text>
           </View>
 
-          {/* Tarjeta Principal Liquid Glass */}
+          {/* Tarjeta Principal */}
           <LiquidGlassCard style={styles.authCard} contentStyle={styles.authCardContent}>
             <View
               style={[
@@ -138,7 +290,9 @@ export default function LoginScreen() {
                 }}
                 style={[
                   styles.modeToggleBtn,
-                  !isRegisterMode && { backgroundColor: theme.cardElevated },
+                  !isRegisterMode && {
+                    backgroundColor: theme.accentVolt,
+                  },
                 ]}
               >
                 <Text
@@ -146,7 +300,7 @@ export default function LoginScreen() {
                     styles.modeToggleText,
                     {
                       color: !isRegisterMode
-                        ? theme.textPrimary
+                        ? theme.accentVoltText
                         : theme.textSecondary,
                     },
                   ]}
@@ -161,7 +315,9 @@ export default function LoginScreen() {
                 }}
                 style={[
                   styles.modeToggleBtn,
-                  isRegisterMode && { backgroundColor: theme.cardElevated },
+                  isRegisterMode && {
+                    backgroundColor: theme.accentVolt,
+                  },
                 ]}
               >
                 <Text
@@ -169,7 +325,7 @@ export default function LoginScreen() {
                     styles.modeToggleText,
                     {
                       color: isRegisterMode
-                        ? theme.textPrimary
+                        ? theme.accentVoltText
                         : theme.textSecondary,
                     },
                   ]}
@@ -264,8 +420,20 @@ export default function LoginScreen() {
                   placeholder="Mínimo 8 caracteres"
                   placeholderTextColor={theme.textMuted}
                   style={[styles.textInput, { color: theme.textPrimary }]}
-                  secureTextEntry
+                  secureTextEntry={!showPassword}
+                  returnKeyType="done"
+                  onSubmitEditing={() => void handleAuthSubmit()}
                 />
+                <Pressable
+                  onPress={() => setShowPassword((prev) => !prev)}
+                  hitSlop={10}
+                >
+                  {showPassword ? (
+                    <EyeOff size={17} color={theme.textMuted} strokeWidth={1.8} />
+                  ) : (
+                    <Eye size={17} color={theme.textMuted} strokeWidth={1.8} />
+                  )}
+                </Pressable>
               </View>
             </View>
 
@@ -283,62 +451,52 @@ export default function LoginScreen() {
             )}
 
             <Pressable
-              onPress={handleAuthSubmit}
+              onPress={() => void handleAuthSubmit()}
               disabled={isSubmitting}
               style={({ pressed }) => [
                 styles.primaryButton,
-                { backgroundColor: theme.accentCobalt },
+                { backgroundColor: theme.accentVolt },
+                isSubmitting && { opacity: 0.6 },
                 pressed && styles.buttonPressed,
               ]}
             >
-              <Cloud size={17} color="#FFFFFF" strokeWidth={2} />
-              <Text style={styles.primaryButtonText}>
+              <Text
+                style={[
+                  styles.primaryButtonText,
+                  { color: theme.accentVoltText },
+                ]}
+              >
                 {isSubmitting
-                  ? 'Conectando con Edge...'
+                  ? 'Conectando...'
                   : isRegisterMode
-                    ? 'Registrar y Sincronizar con D1'
-                    : 'Conectar Cuenta Cloud'}
+                    ? 'Crear cuenta y entrar'
+                    : 'Entrar a Organiza'}
               </Text>
-              <ArrowRight size={16} color="#FFFFFF" strokeWidth={2} />
-            </Pressable>
-          </LiquidGlassCard>
-
-          {/* Acceso Directo Offline-First */}
-          <LiquidGlassCard variant="solid" style={styles.offlineCard}>
-            <View style={styles.offlineRow}>
-              <MacIconBadge
-                icon={Database}
-                module="habits"
-                containerSize={38}
-                size={19}
+              <ArrowRight
+                size={16}
+                color={theme.accentVoltText}
+                strokeWidth={2.1}
               />
-              <View style={styles.offlineTextCol}>
-                <Text style={[styles.offlineTitle, { color: theme.textPrimary }]}>
-                  Modo Local Offline-First (0 ms)
-                </Text>
-                <Text style={[styles.offlineDescription, { color: theme.textSecondary }]}>
-                  Usa toda la app sin conexión ni cuenta. Tus datos se guardan en
-                  SQLite local y se sincronizarán cuando decidas iniciar sesión.
-                </Text>
-              </View>
-            </View>
-
-            <Pressable
-              onPress={handleContinueOfflineFirst}
-              style={({ pressed }) => [
-                styles.secondaryButton,
-                {
-                  backgroundColor: theme.inputBg,
-                  borderColor: theme.glassBorder,
-                },
-                pressed && styles.buttonPressed,
-              ]}
-            >
-              <Text style={[styles.secondaryButtonText, { color: theme.textPrimary }]}>
-                Entrar al Dashboard Local Ahora
-              </Text>
             </Pressable>
           </LiquidGlassCard>
+
+          {/* Opción secundaria discreta: Modo Local 0 ms */}
+          <Pressable
+            onPress={() => void handleContinueOfflineFirst()}
+            style={({ pressed }) => [
+              styles.offlineButton,
+              {
+                backgroundColor: theme.card,
+                borderColor: theme.glassBorder,
+              },
+              pressed && styles.buttonPressed,
+            ]}
+          >
+            <Database size={15} color={theme.textSecondary} strokeWidth={1.9} />
+            <Text style={[styles.offlineButtonText, { color: theme.textSecondary }]}>
+              Continuar sin cuenta (Modo Local 0 ms)
+            </Text>
+          </Pressable>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -354,17 +512,66 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     width: '100%',
-    maxWidth: 520,
+    maxWidth: 460,
     alignSelf: 'center',
     paddingHorizontal: spacing.xl,
     paddingVertical: spacing.xxl,
     gap: spacing.xl,
   },
-  heroSection: {
+  topBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  topRightRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: spacing.sm,
   },
+  brandMonogram: {
+    width: 44,
+    height: 44,
+    borderRadius: radii.squircle,
+    borderCurve: 'continuous',
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  brandMonogramText: {
+    fontSize: 19,
+    fontWeight: '800',
+    letterSpacing: -0.5,
+  },
+  healthPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderWidth: 1,
+    borderRadius: radii.pill,
+    paddingHorizontal: 11,
+    height: 36,
+  },
+  healthDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+  },
+  healthText: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  themeBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  heroSection: {
+    gap: spacing.xs,
+  },
   brandTag: {
-    marginTop: spacing.xs,
     fontSize: 11,
     fontWeight: '700',
     letterSpacing: 1.2,
@@ -378,6 +585,7 @@ const styles = StyleSheet.create({
   heroSubtitle: {
     fontSize: 14,
     lineHeight: 20,
+    marginTop: 2,
   },
   authCard: {
     borderRadius: radii.xl,
@@ -398,7 +606,7 @@ const styles = StyleSheet.create({
   },
   modeToggleText: {
     fontSize: 13,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   inputGroup: {
     gap: 6,
@@ -438,40 +646,20 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   primaryButtonText: {
-    color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  offlineCard: {
-    gap: spacing.md,
-  },
-  offlineRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: spacing.md,
-  },
-  offlineTextCol: {
-    flex: 1,
-    gap: 3,
-  },
-  offlineTitle: {
     fontSize: 15,
     fontWeight: '700',
   },
-  offlineDescription: {
-    fontSize: 13,
-    lineHeight: 18,
-  },
-  secondaryButton: {
-    marginTop: spacing.md,
+  offlineButton: {
     borderWidth: 1,
     borderRadius: radii.md,
-    height: 44,
+    height: 46,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    gap: spacing.sm,
   },
-  secondaryButtonText: {
-    fontSize: 14,
+  offlineButtonText: {
+    fontSize: 13,
     fontWeight: '600',
   },
   buttonPressed: {

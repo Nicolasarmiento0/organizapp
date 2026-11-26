@@ -28,6 +28,7 @@ import {
   RefreshCw,
   Search,
   Sun,
+  User,
   X,
 } from 'lucide-react-native';
 import { iconMetrics, radii, spacing, type MacModuleType } from '../../src/theme/tokens';
@@ -35,6 +36,7 @@ import { useTheme } from '../../src/theme/ThemeContext';
 import { LiquidGlassCard } from '../../src/components/glass/LiquidGlassCard';
 import { MacIconBadge } from '../../src/components/glass/MacIconBadge';
 import { useQuickCapture } from '../../src/components/glass/QuickCaptureContext';
+import { useAccountSheet } from '../../src/components/auth/AccountSheet';
 import {
   MiniCalendarBento,
   ProgressRing,
@@ -45,7 +47,11 @@ import {
   syncWithCloudflareD1,
   type SyncStatusSnapshot,
 } from '../../src/db/sync';
-import { authClient, resolveActiveUserId } from '../../src/services/authClient';
+import {
+  authClient,
+  getUserInitials,
+  resolveActiveUserId,
+} from '../../src/services/authClient';
 
 type ActivityFilter = 'all' | 'calendar' | 'reminders';
 
@@ -102,6 +108,7 @@ export default function DashboardBentoScreen() {
 
   const { theme, isDark, toggleTheme } = useTheme();
   const { openQuickCapture } = useQuickCapture();
+  const { openAccountSheet } = useAccountSheet();
   const router = useRouter();
   const { data: session } = authClient.useSession();
   const activeUserId = resolveActiveUserId(session?.user?.id);
@@ -142,6 +149,11 @@ export default function DashboardBentoScreen() {
     if (!rawName) return 'Nico';
     return rawName.split(' ')[0] || 'Nico';
   }, [session?.user?.name]);
+
+  const userInitials = useMemo(
+    () => getUserInitials(session?.user?.name, session?.user?.email),
+    [session?.user?.name, session?.user?.email]
+  );
 
   const pendingTasks = useMemo(
     () => tasks.filter((t) => !t.isCompleted),
@@ -225,9 +237,7 @@ export default function DashboardBentoScreen() {
     },
   ];
 
-  const habitsPalette = theme.modules.habits;
-  const remindersPalette = theme.modules.reminders;
-  const notesPalette = theme.modules.notes;
+  const isAuthenticated = Boolean(session?.user);
 
   return (
     <SafeAreaView
@@ -261,7 +271,7 @@ export default function DashboardBentoScreen() {
                 {
                   backgroundColor: theme.card,
                   borderColor: theme.glassBorder,
-                  minWidth: isTabletOrWide ? 220 : 150,
+                  minWidth: isTabletOrWide ? 220 : 145,
                 },
               ]}
             >
@@ -296,7 +306,7 @@ export default function DashboardBentoScreen() {
                 color={
                   syncState.status === 'synced'
                     ? theme.success
-                    : theme.accentCobaltBright
+                    : theme.textSecondary
                 }
                 strokeWidth={2}
               />
@@ -305,11 +315,51 @@ export default function DashboardBentoScreen() {
                   ? 'Sync...'
                   : syncState.dirtyCount > 0
                     ? `0 ms · ${syncState.dirtyCount}`
-                    : '0 ms · Local'}
+                    : isAuthenticated
+                      ? 'D1 Sync'
+                      : '0 ms · Local'}
               </Text>
             </Pressable>
 
-            {/* Toggle de tema accesible */}
+            {/* Píldora de Cuenta / Perfil */}
+            <Pressable
+              onPress={openAccountSheet}
+              style={[
+                styles.accountPill,
+                {
+                  backgroundColor: theme.card,
+                  borderColor: isAuthenticated
+                    ? theme.glassBorderStrong
+                    : theme.glassBorder,
+                },
+              ]}
+              accessibilityLabel="Abrir cuenta y perfil"
+            >
+              {isAuthenticated ? (
+                <View
+                  style={[
+                    styles.miniAvatar,
+                    { backgroundColor: theme.accentVolt },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.miniAvatarText,
+                      { color: theme.accentVoltText },
+                    ]}
+                  >
+                    {userInitials}
+                  </Text>
+                </View>
+              ) : (
+                <User size={14} color={theme.textSecondary} strokeWidth={2} />
+              )}
+              <Text style={[styles.accountPillText, { color: theme.textPrimary }]}>
+                {isAuthenticated ? firstName : 'Iniciar sesión'}
+              </Text>
+            </Pressable>
+
+            {/* Toggle de tema en móvil */}
             {!isDesktop ? (
               <Pressable
                 onPress={toggleTheme}
@@ -323,7 +373,7 @@ export default function DashboardBentoScreen() {
                 accessibilityLabel="Cambiar tema"
               >
                 {isDark ? (
-                  <Sun size={16} color={theme.accentVolt} strokeWidth={2} />
+                  <Sun size={16} color={theme.textPrimary} strokeWidth={2} />
                 ) : (
                   <Moon size={16} color={theme.textPrimary} strokeWidth={2} />
                 )}
@@ -335,12 +385,14 @@ export default function DashboardBentoScreen() {
               onPress={() => openQuickCapture('task')}
               style={({ pressed }) => [
                 styles.newCtaBtn,
-                { backgroundColor: theme.accentCobalt },
+                { backgroundColor: theme.accentVolt },
                 pressed && { opacity: 0.88 },
               ]}
             >
-              <Plus size={16} color="#FFFFFF" strokeWidth={2.3} />
-              <Text style={styles.newCtaText}>Nuevo</Text>
+              <Plus size={16} color={theme.accentVoltText} strokeWidth={2.3} />
+              <Text style={[styles.newCtaText, { color: theme.accentVoltText }]}>
+                Nuevo
+              </Text>
             </Pressable>
           </View>
         </View>
@@ -371,7 +423,7 @@ export default function DashboardBentoScreen() {
                     onPress={() => toggleTask(t.id)}
                     style={[styles.searchHitRow, { borderColor: theme.divider }]}
                   >
-                    <Bell size={14} color={remindersPalette.icon} strokeWidth={2} />
+                    <Bell size={14} color={theme.textSecondary} strokeWidth={2} />
                     <Text style={[styles.searchHitText, { color: theme.textPrimary }]} numberOfLines={1}>
                       {t.title}
                     </Text>
@@ -386,11 +438,11 @@ export default function DashboardBentoScreen() {
                     onPress={() => toggleHabitForToday(h.id)}
                     style={[styles.searchHitRow, { borderColor: theme.divider }]}
                   >
-                    <Flame size={14} color={habitsPalette.icon} strokeWidth={2} />
+                    <Flame size={14} color={theme.textSecondary} strokeWidth={2} />
                     <Text style={[styles.searchHitText, { color: theme.textPrimary }]} numberOfLines={1}>
                       {h.title}
                     </Text>
-                    <Text style={[styles.searchHitTag, { color: habitsPalette.icon }]}>
+                    <Text style={[styles.searchHitTag, { color: theme.textSecondary }]}>
                       {h.streak}d racha
                     </Text>
                   </Pressable>
@@ -401,7 +453,7 @@ export default function DashboardBentoScreen() {
                     onPress={() => router.push('/(tabs)/calendar')}
                     style={[styles.searchHitRow, { borderColor: theme.divider }]}
                   >
-                    <Calendar size={14} color={theme.modules.calendar.icon} strokeWidth={2} />
+                    <Calendar size={14} color={theme.textSecondary} strokeWidth={2} />
                     <Text style={[styles.searchHitText, { color: theme.textPrimary }]} numberOfLines={1}>
                       {b.title}
                     </Text>
@@ -416,7 +468,7 @@ export default function DashboardBentoScreen() {
                     onPress={() => router.push('/(tabs)/notes')}
                     style={[styles.searchHitRow, { borderColor: theme.divider }]}
                   >
-                    <FileText size={14} color={notesPalette.icon} strokeWidth={2} />
+                    <FileText size={14} color={theme.textSecondary} strokeWidth={2} />
                     <Text style={[styles.searchHitText, { color: theme.textPrimary }]} numberOfLines={1}>
                       {n.title}
                     </Text>
@@ -457,15 +509,15 @@ export default function DashboardBentoScreen() {
                 style={[
                   styles.statusLivePill,
                   {
-                    backgroundColor: theme.accentCobaltSoft,
-                    borderColor: theme.accentCobaltBorder,
+                    backgroundColor: theme.pillBg,
+                    borderColor: theme.glassBorder,
                   },
                 ]}
               >
                 <Text
                   style={[
                     styles.statusLiveText,
-                    { color: theme.accentCobaltBright },
+                    { color: theme.textPrimary },
                   ]}
                 >
                   Hoy
@@ -518,7 +570,7 @@ export default function DashboardBentoScreen() {
                 <View
                   style={[
                     styles.kpiAccentBar,
-                    { backgroundColor: remindersPalette.icon },
+                    { backgroundColor: theme.textMuted },
                   ]}
                 />
                 <Text style={[styles.kpiLabel, { color: theme.textSecondary }]}>
@@ -544,7 +596,7 @@ export default function DashboardBentoScreen() {
                 <View
                   style={[
                     styles.kpiAccentBar,
-                    { backgroundColor: habitsPalette.icon },
+                    { backgroundColor: theme.accentVolt },
                   ]}
                 />
                 <Text style={[styles.kpiLabel, { color: theme.textSecondary }]}>
@@ -553,7 +605,7 @@ export default function DashboardBentoScreen() {
                 <Text style={[styles.kpiValue, { color: theme.textPrimary }]}>
                   {telemetry.completedHabits}/{telemetry.totalHabits}
                 </Text>
-                <Text style={[styles.kpiMeta, { color: habitsPalette.icon }]}>
+                <Text style={[styles.kpiMeta, { color: theme.textSecondary }]}>
                   {telemetry.rewardPoints} pts acumulados
                 </Text>
               </View>
@@ -601,7 +653,7 @@ export default function DashboardBentoScreen() {
                       <Text
                         style={[
                           styles.moduleTileStat,
-                          { color: theme.modules[mod.key].icon },
+                          { color: theme.textPrimary },
                         ]}
                       >
                         {mod.stat}
@@ -613,7 +665,7 @@ export default function DashboardBentoScreen() {
             </View>
           </LiquidGlassCard>
 
-          {/* Mini Calendario Cobalt */}
+          {/* Mini Calendario Titanium Tonal */}
           <View style={isDesktop ? { flex: 1 } : undefined}>
             <MiniCalendarBento
               calendarMonth={calendarMonth}
@@ -682,7 +734,7 @@ export default function DashboardBentoScreen() {
                           {
                             backgroundColor: theme.cardElevated,
                             borderColor: done
-                              ? habitsPalette.border
+                              ? theme.glassBorderStrong
                               : theme.glassBorder,
                           },
                         ]}
@@ -691,9 +743,11 @@ export default function DashboardBentoScreen() {
                           style={[
                             styles.habitCheckBox,
                             {
-                              borderColor: habitsPalette.icon,
+                              borderColor: done
+                                ? theme.accentVolt
+                                : theme.textSecondary,
                               backgroundColor: done
-                                ? habitsPalette.icon
+                                ? theme.accentVolt
                                 : 'transparent',
                             },
                           ]}
@@ -701,7 +755,7 @@ export default function DashboardBentoScreen() {
                           {done ? (
                             <Check
                               size={12}
-                              color={isDark ? theme.accentVoltText : '#FFFFFF'}
+                              color={theme.accentVoltText}
                               strokeWidth={2.7}
                             />
                           ) : null}
@@ -719,8 +773,8 @@ export default function DashboardBentoScreen() {
                         >
                           {habit.title}
                         </Text>
-                        <Text style={[styles.habitMiniStreak, { color: habitsPalette.icon }]}>
-                          🔥 {habit.streak}d
+                        <Text style={[styles.habitMiniStreak, { color: theme.textSecondary }]}>
+                          {habit.streak}d
                         </Text>
                       </Pressable>
                     );
@@ -742,12 +796,12 @@ export default function DashboardBentoScreen() {
             <LiquidGlassCard style={styles.bentoCard} contentStyle={styles.bentoCardContent}>
               <View style={styles.cardHeaderRow}>
                 <View style={styles.cardTitleWithBadge}>
-                  <Award size={18} color={habitsPalette.icon} strokeWidth={2} />
+                  <Award size={18} color={theme.textPrimary} strokeWidth={2} />
                   <Text style={[styles.cardTitle, { color: theme.textPrimary }]}>
                     Próximo Premio
                   </Text>
                 </View>
-                <Text style={[styles.rewardPercentText, { color: habitsPalette.icon }]}>
+                <Text style={[styles.rewardPercentText, { color: theme.textPrimary }]}>
                   {telemetry.rewardProgressPercent}% completado
                 </Text>
               </View>
@@ -762,7 +816,7 @@ export default function DashboardBentoScreen() {
                     styles.linearFill,
                     {
                       width: `${Math.max(6, telemetry.rewardProgressPercent)}%`,
-                      backgroundColor: isDark ? theme.accentVolt : theme.success,
+                      backgroundColor: theme.accentVolt,
                     },
                   ]}
                 />
@@ -802,8 +856,6 @@ export default function DashboardBentoScreen() {
                     ] as const
                   ).map((tab) => {
                     const active = activityFilter === tab.key;
-                    const activeBg = isDark ? theme.accentVolt : theme.accentCobalt;
-                    const activeTxt = isDark ? theme.accentVoltText : '#FFFFFF';
 
                     return (
                       <Pressable
@@ -812,15 +864,23 @@ export default function DashboardBentoScreen() {
                         style={[
                           styles.segmentPill,
                           {
-                            backgroundColor: active ? activeBg : theme.pillBg,
-                            borderColor: active ? activeBg : theme.glassBorder,
+                            backgroundColor: active
+                              ? theme.accentVolt
+                              : theme.pillBg,
+                            borderColor: active
+                              ? theme.accentVolt
+                              : theme.glassBorder,
                           },
                         ]}
                       >
                         <Text
                           style={[
                             styles.segmentPillText,
-                            { color: active ? activeTxt : theme.textSecondary },
+                            {
+                              color: active
+                                ? theme.accentVoltText
+                                : theme.textSecondary,
+                            },
                             active && { fontWeight: '700' },
                           ]}
                         >
@@ -844,11 +904,9 @@ export default function DashboardBentoScreen() {
                           style={({ pressed }) => [
                             styles.activityTile,
                             {
-                              backgroundColor: isPrimary
-                                ? theme.accentCobalt
-                                : theme.cardElevated,
+                              backgroundColor: theme.cardElevated,
                               borderColor: isPrimary
-                                ? 'rgba(255,255,255,0.18)'
+                                ? theme.glassBorderStrong
                                 : theme.glassBorder,
                               width: isTabletOrWide ? '48.6%' : '100%',
                             },
@@ -861,8 +919,8 @@ export default function DashboardBentoScreen() {
                                 styles.activityBadge,
                                 {
                                   backgroundColor: isPrimary
-                                    ? 'rgba(255,255,255,0.18)'
-                                    : theme.modules.calendar.background,
+                                    ? theme.accentCobaltSoft
+                                    : theme.pillBg,
                                 },
                               ]}
                             >
@@ -870,8 +928,8 @@ export default function DashboardBentoScreen() {
                                 size={12}
                                 color={
                                   isPrimary
-                                    ? '#FFFFFF'
-                                    : theme.modules.calendar.icon
+                                    ? theme.accentCobaltBright
+                                    : theme.textSecondary
                                 }
                                 strokeWidth={2}
                               />
@@ -880,8 +938,8 @@ export default function DashboardBentoScreen() {
                                   styles.activityBadgeText,
                                   {
                                     color: isPrimary
-                                      ? '#FFFFFF'
-                                      : theme.modules.calendar.icon,
+                                      ? theme.accentCobaltBright
+                                      : theme.textSecondary,
                                   },
                                 ]}
                               >
@@ -890,11 +948,7 @@ export default function DashboardBentoScreen() {
                             </View>
                             <ArrowUpRight
                               size={15}
-                              color={
-                                isPrimary
-                                  ? 'rgba(255,255,255,0.85)'
-                                  : theme.textMuted
-                              }
+                              color={theme.textMuted}
                               strokeWidth={2}
                             />
                           </View>
@@ -902,7 +956,7 @@ export default function DashboardBentoScreen() {
                           <Text
                             style={[
                               styles.activityTileTitle,
-                              { color: isPrimary ? '#FFFFFF' : theme.textPrimary },
+                              { color: theme.textPrimary },
                             ]}
                             numberOfLines={2}
                           >
@@ -911,11 +965,7 @@ export default function DashboardBentoScreen() {
                           <Text
                             style={[
                               styles.activityTileMeta,
-                              {
-                                color: isPrimary
-                                  ? 'rgba(255,255,255,0.78)'
-                                  : theme.textSecondary,
-                              },
+                              { color: theme.textSecondary },
                             ]}
                             numberOfLines={1}
                           >
@@ -953,11 +1003,7 @@ export default function DashboardBentoScreen() {
                             >
                               <Circle
                                 size={18}
-                                color={
-                                  task.priority === 3
-                                    ? remindersPalette.icon
-                                    : theme.accentCobaltBright
-                                }
+                                color={theme.textSecondary}
                                 strokeWidth={2}
                               />
                               <Text
@@ -966,7 +1012,7 @@ export default function DashboardBentoScreen() {
                                   {
                                     color:
                                       task.priority === 3
-                                        ? remindersPalette.icon
+                                        ? theme.textPrimary
                                         : theme.textSecondary,
                                   },
                                 ]}
@@ -979,18 +1025,18 @@ export default function DashboardBentoScreen() {
                               <View
                                 style={[
                                   styles.alertMiniPill,
-                                  { backgroundColor: remindersPalette.background },
+                                  { backgroundColor: theme.pillBg },
                                 ]}
                               >
                                 <Bell
                                   size={11}
-                                  color={remindersPalette.icon}
+                                  color={theme.textSecondary}
                                   strokeWidth={2}
                                 />
                                 <Text
                                   style={[
                                     styles.alertMiniText,
-                                    { color: remindersPalette.icon },
+                                    { color: theme.textPrimary },
                                   ]}
                                 >
                                   {clock}
@@ -1084,16 +1130,16 @@ export default function DashboardBentoScreen() {
                     style={[
                       styles.smallNewNoteBtn,
                       {
-                        backgroundColor: notesPalette.background,
-                        borderColor: notesPalette.border,
+                        backgroundColor: theme.pillBg,
+                        borderColor: theme.glassBorder,
                       },
                     ]}
                   >
-                    <Plus size={13} color={notesPalette.icon} strokeWidth={2.3} />
+                    <Plus size={13} color={theme.textPrimary} strokeWidth={2.3} />
                     <Text
                       style={[
                         styles.smallNewNoteText,
-                        { color: notesPalette.icon },
+                        { color: theme.textPrimary },
                       ]}
                     >
                       Nueva Nota
@@ -1134,7 +1180,7 @@ export default function DashboardBentoScreen() {
                           {page.isPinned ? (
                             <Pin
                               size={12}
-                              color={notesPalette.icon}
+                              color={theme.textSecondary}
                               strokeWidth={2.2}
                             />
                           ) : null}
@@ -1241,6 +1287,30 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
   },
+  accountPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    borderWidth: 1,
+    borderRadius: radii.pill,
+    paddingHorizontal: 11,
+    height: 38,
+  },
+  miniAvatar: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  miniAvatarText: {
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  accountPillText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
   iconRoundBtn: {
     width: 38,
     height: 38,
@@ -1260,7 +1330,6 @@ const styles = StyleSheet.create({
   newCtaText: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#FFFFFF',
   },
   searchResultsCard: {
     borderRadius: radii.lg,

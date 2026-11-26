@@ -7,10 +7,6 @@ compatibility_flags = ["nodejs_compat"]
 enabled = true
 head_sampling_rate = 1
 
-[observability.traces]
-enabled = true
-head_sampling_rate = 1
-
 # Base de datos SQLite en el Edge (Cloudflare D1 - Tier 100% Gratuito)
 # Ejecuta `npx wrangler d1 create organiza-app-db` y reemplaza database_id
 [[d1_databases]]

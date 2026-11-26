@@ -13,13 +13,12 @@ import {
   Bell,
   Calendar,
   CheckSquare,
-  Cloud,
   FileText,
   LayoutGrid,
   Moon,
   Plus,
   Sun,
-  UserCheck,
+  User,
 } from 'lucide-react-native';
 import {
   iconMetrics,
@@ -35,7 +34,15 @@ import {
   QuickCaptureProvider,
   useQuickCapture,
 } from '../../src/components/glass/QuickCaptureContext';
-import { authClient, resolveActiveUserId } from '../../src/services/authClient';
+import {
+  AccountSheetProvider,
+  useAccountSheet,
+} from '../../src/components/auth/AccountSheet';
+import {
+  authClient,
+  getUserInitials,
+  resolveActiveUserId,
+} from '../../src/services/authClient';
 
 interface NavModuleItem {
   routeName: string;
@@ -96,14 +103,20 @@ const NAV_ITEMS: readonly NavModuleItem[] = [
 ];
 
 function DesktopIconRail({
+  userName,
+  userEmail,
   hasSession,
 }: {
+  userName?: string | null;
+  userEmail?: string | null;
   hasSession: boolean;
 }) {
   const { theme, isDark, toggleTheme } = useTheme();
   const { openQuickCapture } = useQuickCapture();
+  const { openAccountSheet } = useAccountSheet();
   const pathname = usePathname();
   const router = useRouter();
+  const initials = getUserInitials(userName, userEmail);
 
   return (
     <View style={[styles.railColumn, { backgroundColor: theme.canvas }]}>
@@ -138,8 +151,6 @@ function DesktopIconRail({
         {NAV_ITEMS.map((item) => {
           const isActive = item.matchPaths.includes(pathname);
           const IconComp = item.icon;
-          const activeBg = isDark ? theme.accentVolt : theme.accentCobalt;
-          const activeIconColor = isDark ? theme.accentVoltText : '#FFFFFF';
 
           return (
             <Pressable
@@ -151,14 +162,14 @@ function DesktopIconRail({
               style={({ pressed }) => [
                 styles.railCircleBtn,
                 {
-                  backgroundColor: isActive ? activeBg : theme.pillBg,
+                  backgroundColor: isActive ? theme.accentVolt : theme.pillBg,
                 },
                 pressed && { opacity: 0.82, transform: [{ scale: 0.96 }] },
               ]}
             >
               <IconComp
                 size={20}
-                color={isActive ? activeIconColor : theme.textSecondary}
+                color={isActive ? theme.accentVoltText : theme.textSecondary}
                 strokeWidth={isActive ? 2.1 : iconMetrics.strokeWidth}
               />
             </Pressable>
@@ -183,18 +194,18 @@ function DesktopIconRail({
           accessibilityLabel="Captura rápida"
           style={({ pressed }) => [
             styles.railCircleBtn,
-            { backgroundColor: theme.accentCobalt },
+            { backgroundColor: theme.accentVolt },
             pressed && { opacity: 0.86, transform: [{ scale: 0.96 }] },
           ]}
         >
-          <Plus size={20} color="#FFFFFF" strokeWidth={2.2} />
+          <Plus size={20} color={theme.accentVoltText} strokeWidth={2.2} />
         </Pressable>
 
         <Pressable
           onPress={toggleTheme}
           accessibilityRole="button"
           accessibilityLabel={
-            isDark ? 'Cambiar a Tesla White' : 'Cambiar a Cockpit Dark'
+            isDark ? 'Cambiar a Titanium Light' : 'Cambiar a Titanium Dark'
           }
           style={({ pressed }) => [
             styles.railCircleBtn,
@@ -203,26 +214,32 @@ function DesktopIconRail({
           ]}
         >
           {isDark ? (
-            <Sun size={19} color={theme.accentVolt} strokeWidth={1.85} />
+            <Sun size={19} color={theme.textPrimary} strokeWidth={1.85} />
           ) : (
             <Moon size={19} color={theme.textPrimary} strokeWidth={1.85} />
           )}
         </Pressable>
 
         <Pressable
-          onPress={() => router.push('/(auth)/login')}
+          onPress={openAccountSheet}
           accessibilityRole="button"
           accessibilityLabel="Cuenta y sincronización Cloud"
           style={({ pressed }) => [
             styles.railCircleBtn,
-            { backgroundColor: theme.pillBg },
+            {
+              backgroundColor: hasSession ? theme.accentCobaltSoft : theme.pillBg,
+              borderWidth: hasSession ? 1 : 0,
+              borderColor: theme.accentCobaltBorder,
+            },
             pressed && { opacity: 0.8 },
           ]}
         >
           {hasSession ? (
-            <UserCheck size={19} color={theme.success} strokeWidth={1.85} />
+            <Text style={[styles.railInitials, { color: theme.textPrimary }]}>
+              {initials}
+            </Text>
           ) : (
-            <Cloud size={19} color={theme.textSecondary} strokeWidth={1.85} />
+            <User size={19} color={theme.textSecondary} strokeWidth={1.85} />
           )}
         </Pressable>
       </View>
@@ -235,7 +252,7 @@ function FloatingLiquidGlassDock({
   navigation,
   onOpenQuickCapture,
 }: BottomTabBarProps & { onOpenQuickCapture: () => void }) {
-  const { theme, isDark } = useTheme();
+  const { theme } = useTheme();
 
   return (
     <View style={styles.dockWrapper} pointerEvents="box-none">
@@ -249,7 +266,6 @@ function FloatingLiquidGlassDock({
         {NAV_ITEMS.map((item, idx) => {
           const routeIndex = state.routes.findIndex((r) => r.name === item.routeName);
           const isFocused = state.index === routeIndex;
-          const palette = theme.modules[item.module];
           const IconComponent = item.icon;
 
           const handlePress = () => {
@@ -272,13 +288,13 @@ function FloatingLiquidGlassDock({
                   onPress={onOpenQuickCapture}
                   style={({ pressed }) => [
                     styles.mobileQuickCaptureBtn,
-                    { backgroundColor: theme.accentCobalt },
+                    { backgroundColor: theme.accentVolt },
                     pressed && { transform: [{ scale: 0.94 }], opacity: 0.9 },
                   ]}
                   accessibilityRole="button"
                   accessibilityLabel="Captura rápida Offline-First"
                 >
-                  <Plus size={20} color="#FFFFFF" strokeWidth={2.25} />
+                  <Plus size={20} color={theme.accentVoltText} strokeWidth={2.25} />
                 </Pressable>
               )}
 
@@ -292,20 +308,14 @@ function FloatingLiquidGlassDock({
                   style={[
                     styles.iconSquircle,
                     isFocused && {
-                      backgroundColor: isDark ? theme.accentVolt : palette.background,
-                      borderColor: isDark ? theme.accentVoltBorder : palette.border,
+                      backgroundColor: theme.accentVolt,
+                      borderColor: theme.accentVoltBorder,
                     },
                   ]}
                 >
                   <IconComponent
                     size={18}
-                    color={
-                      isFocused
-                        ? isDark
-                          ? theme.accentVoltText
-                          : palette.icon
-                        : theme.textSecondary
-                    }
+                    color={isFocused ? theme.accentVoltText : theme.textSecondary}
                     strokeWidth={iconMetrics.strokeWidth}
                   />
                 </View>
@@ -347,7 +357,13 @@ function TabsShellContent() {
         },
       ]}
     >
-      {isDesktop ? <DesktopIconRail hasSession={Boolean(session?.user)} /> : null}
+      {isDesktop ? (
+        <DesktopIconRail
+          userName={session?.user?.name}
+          userEmail={session?.user?.email}
+          hasSession={Boolean(session?.user)}
+        />
+      ) : null}
 
       <View style={styles.mainStage}>
         <Tabs
@@ -384,9 +400,11 @@ function TabsShellContent() {
 
 export default function TabsLayout() {
   return (
-    <QuickCaptureProvider>
-      <TabsShellContent />
-    </QuickCaptureProvider>
+    <AccountSheetProvider>
+      <QuickCaptureProvider>
+        <TabsShellContent />
+      </QuickCaptureProvider>
+    </AccountSheetProvider>
   );
 }
 
@@ -430,6 +448,11 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  railInitials: {
+    fontSize: 13,
+    fontWeight: '800',
+    letterSpacing: -0.3,
   },
   dockWrapper: {
     position: 'absolute',

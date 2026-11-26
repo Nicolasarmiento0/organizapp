@@ -92,8 +92,8 @@ export const darkTheme: ThemePalette = {
   textMuted: '#606673',
   textInverse: '#0A0B0D',
 
-  accentCobalt: '#4B83F2',
-  accentCobaltBright: '#6B9BFA',
+  accentCobalt: '#cececeff',
+  accentCobaltBright: '#fa6b6bff',
   accentCobaltSoft: 'rgba(75, 131, 242, 0.14)',
   accentCobaltBorder: 'rgba(75, 131, 242, 0.28)',
 
@@ -178,7 +178,7 @@ export const lightTheme: ThemePalette = {
   textInverse: '#FFFFFF',
 
   accentCobalt: '#111318',
-  accentCobaltBright: '#2563EB',
+  accentCobaltBright: '#fa6b6bff',
   accentCobaltSoft: 'rgba(17, 19, 24, 0.07)',
   accentCobaltBorder: 'rgba(17, 19, 24, 0.16)',
 

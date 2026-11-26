@@ -40,19 +40,30 @@ export function createAuth(env: CloudflareBindings) {
       minPasswordLength: 8,
     },
     plugins: [expo()],
-    trustedOrigins: [
-      'organizaapp://',
-      'organizaapp://*',
-      'exp://',
-      'exp://*',
-      'http://localhost:8081',
-      'http://localhost:8082',
-      'http://localhost:19006',
-      'http://127.0.0.1:8081',
-      'http://localhost:8787',
-      'http://127.0.0.1:8787',
-      ...extraOrigins,
-    ],
+    trustedOrigins: (request) => {
+      const requestOrigin = request?.headers.get('origin')?.trim();
+      const dynamicOrigins =
+        requestOrigin &&
+        (requestOrigin.startsWith('http://localhost:') ||
+          requestOrigin.startsWith('http://127.0.0.1:'))
+          ? [requestOrigin]
+          : [];
+
+      return [
+        'organizaapp://',
+        'organizaapp://*',
+        'exp://',
+        'exp://*',
+        'http://localhost:8081',
+        'http://localhost:8082',
+        'http://localhost:19006',
+        'http://127.0.0.1:8081',
+        'http://localhost:8787',
+        'http://127.0.0.1:8787',
+        ...dynamicOrigins,
+        ...extraOrigins,
+      ];
+    },
   });
 }
 

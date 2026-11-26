@@ -21,7 +21,7 @@ configureLocalNotifications();
 
 function RootNavigator() {
   const { theme } = useTheme();
-  const { data: session, isPending } = authClient.useSession();
+  const { data: session, isPending, isRefetching } = authClient.useSession();
   const [isGuestPrefLoaded, setIsGuestPrefLoaded] = useState(false);
   const [isOfflineGuest, setIsOfflineGuest] = useState<boolean>(() =>
     getOfflineGuestPreferenceSync()
@@ -52,7 +52,7 @@ function RootNavigator() {
   }, [session?.user?.id]);
 
   useEffect(() => {
-    if (!isGuestPrefLoaded || (isPending && !isOfflineGuest)) {
+    if (!isGuestPrefLoaded || ((isPending || isRefetching) && !isOfflineGuest)) {
       return;
     }
 
@@ -69,6 +69,7 @@ function RootNavigator() {
     isOfflineGuest,
     isGuestPrefLoaded,
     isPending,
+    isRefetching,
     segments,
     router,
   ]);
