@@ -248,6 +248,7 @@ export default function DashboardBentoScreen() {
     lastSyncedAt: 0,
     dirtyCount: 0,
     lastError: null,
+    isHydrated: false,
   });
 
   useEffect(() => {
@@ -256,9 +257,10 @@ export default function DashboardBentoScreen() {
 
   const firstName = useMemo(() => {
     const rawName = session?.user?.name?.trim();
-    if (!rawName) return 'Nico';
-    return rawName.split(' ')[0] || 'Nico';
-  }, [session?.user?.name]);
+    if (rawName) return rawName.split(' ')[0] || rawName;
+    const emailPrefix = session?.user?.email?.split('@')[0]?.trim();
+    return emailPrefix || 'Usuario';
+  }, [session?.user?.name, session?.user?.email]);
 
   const userInitials = useMemo(
     () => getUserInitials(session?.user?.name, session?.user?.email),
@@ -402,7 +404,7 @@ export default function DashboardBentoScreen() {
 
             {/* Sync status pill */}
             <Pressable
-              onPress={() => void syncWithCloudflareD1()}
+              onPress={() => void syncWithCloudflareD1({ forceFullPull: true })}
               style={[
                 styles.syncPill,
                 {
@@ -414,20 +416,32 @@ export default function DashboardBentoScreen() {
               <RefreshCw
                 size={13}
                 color={
-                  syncState.status === 'synced'
-                    ? theme.success
-                    : theme.textSecondary
+                  syncState.status === 'error'
+                    ? theme.danger
+                    : syncState.status === 'synced'
+                      ? theme.success
+                      : theme.textSecondary
                 }
                 strokeWidth={2}
               />
-              <Text style={[styles.syncPillText, { color: theme.textPrimary }]}>
+              <Text
+                style={[
+                  styles.syncPillText,
+                  {
+                    color:
+                      syncState.status === 'error'
+                        ? theme.danger
+                        : theme.textPrimary,
+                  },
+                ]}
+              >
                 {syncState.status === 'syncing'
-                  ? 'Sync...'
-                  : syncState.dirtyCount > 0
-                    ? `0 ms · ${syncState.dirtyCount}`
-                    : isAuthenticated
-                      ? 'D1 Sync'
-                      : '0 ms · Local'}
+                  ? 'Sincronizando...'
+                  : syncState.status === 'error'
+                    ? 'Error sync · Reintentar'
+                    : syncState.dirtyCount > 0
+                      ? 'Guardando...'
+                      : 'Nube sincronizada'}
               </Text>
             </Pressable>
 
@@ -800,7 +814,7 @@ export default function DashboardBentoScreen() {
                       Hábitos de Hoy
                     </Text>
                     <Text style={[styles.cardSubtitle, { color: theme.textSecondary }]}>
-                      Checklist diario 0 ms
+                      Checklist sincronizado
                     </Text>
                   </View>
                 </View>

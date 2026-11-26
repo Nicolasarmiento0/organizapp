@@ -9,8 +9,10 @@ import {
   Switch,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Minus, PauseCircle, Plus, Target, Trash2, X } from '../../components/icons';
 import type {
   HabitRecord,
@@ -64,6 +66,13 @@ export const HabitEditorSheet: React.FC<HabitEditorSheetProps> = ({
   onDelete,
 }) => {
   const { theme, isDark } = useTheme();
+  const { width, height } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  const isMobile = width < 640;
+  const sheetHeight = Math.min(
+    Math.round(height * (isMobile ? 0.88 : 0.86)),
+    isMobile ? 740 : 780
+  );
   const todayKey = getTodayDateKey();
 
   const [title, setTitle] = useState('');
@@ -187,6 +196,10 @@ export const HabitEditorSheet: React.FC<HabitEditorSheetProps> = ({
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={[
           styles.backdrop,
+          isMobile && [
+            styles.backdropMobile,
+            { paddingTop: Math.max(insets.top + 12, 24) },
+          ],
           {
             backgroundColor: isDark
               ? 'rgba(5, 7, 10, 0.76)'
@@ -200,16 +213,31 @@ export const HabitEditorSheet: React.FC<HabitEditorSheetProps> = ({
           variant="floating"
           intensity={85}
           noPadding
-          style={styles.sheetContainer}
+          fillHeight
+          style={[
+            styles.sheetContainer,
+            { height: sheetHeight },
+            isMobile && styles.sheetContainerMobile,
+          ]}
         >
-          <ScrollView
-            contentContainerStyle={styles.sheetContent}
-            showsVerticalScrollIndicator={false}
-            keyboardShouldPersistTaps="handled"
+          {/* Header fijo */}
+          <View
+            style={[
+              styles.fixedHeader,
+              isMobile && styles.fixedHeaderMobile,
+              { borderBottomColor: theme.divider },
+            ]}
           >
-            {/* Header */}
+            {isMobile ? (
+              <View
+                style={[
+                  styles.dragHandle,
+                  { backgroundColor: theme.glassBorderStrong },
+                ]}
+              />
+            ) : null}
             <View style={styles.headerRow}>
-              <View>
+              <View style={styles.headerTextCol}>
                 <Text style={[styles.sheetTitle, { color: theme.textPrimary }]}>
                   {habitToEdit ? 'Configurar Hábito' : 'Nuevo Hábito Inteligente'}
                 </Text>
@@ -225,7 +253,20 @@ export const HabitEditorSheet: React.FC<HabitEditorSheetProps> = ({
                 <X size={18} color={theme.textSecondary} strokeWidth={iconMetrics.strokeWidth} />
               </Pressable>
             </View>
+          </View>
 
+          <ScrollView
+            style={styles.scrollBody}
+            contentContainerStyle={[
+              styles.scrollContent,
+              isMobile && styles.scrollContentMobile,
+            ]}
+            showsVerticalScrollIndicator={true}
+            nestedScrollEnabled
+            bounces
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
+          >
             {/* Nombre */}
             <View style={styles.sectionBlock}>
               <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>
@@ -244,7 +285,7 @@ export const HabitEditorSheet: React.FC<HabitEditorSheetProps> = ({
                     color: theme.textPrimary,
                   },
                 ]}
-                autoFocus={!habitToEdit}
+                autoFocus={!habitToEdit && !isMobile}
               />
             </View>
 
@@ -475,8 +516,8 @@ export const HabitEditorSheet: React.FC<HabitEditorSheetProps> = ({
             </View>
 
             {/* Momento del día & Horario */}
-            <View style={styles.rowTwoCols}>
-              <View style={[styles.sectionBlock, { flex: 1.5 }]}>
+            <View style={[styles.rowTwoCols, isMobile && styles.rowTwoColsMobile]}>
+              <View style={[styles.sectionBlock, !isMobile && { flex: 1.5 }]}>
                 <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>
                   Momento
                 </Text>
@@ -517,7 +558,7 @@ export const HabitEditorSheet: React.FC<HabitEditorSheetProps> = ({
                 </View>
               </View>
 
-              <View style={[styles.sectionBlock, { flex: 0.7 }]}>
+              <View style={[styles.sectionBlock, !isMobile && { flex: 0.7 }]}>
                 <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>
                   Aviso (HH:mm)
                 </Text>
@@ -532,7 +573,7 @@ export const HabitEditorSheet: React.FC<HabitEditorSheetProps> = ({
                       backgroundColor: theme.inputBg,
                       borderColor: theme.glassBorder,
                       color: theme.textPrimary,
-                      textAlign: 'center',
+                      textAlign: isMobile ? 'left' : 'center',
                     },
                   ]}
                 />
@@ -617,7 +658,7 @@ export const HabitEditorSheet: React.FC<HabitEditorSheetProps> = ({
 
               {hasWeeklyGoal ? (
                 <View style={{ gap: spacing.sm }}>
-                  <View style={styles.quantRow}>
+                  <View style={[styles.quantRow, styles.quantRowWrap]}>
                     <View style={styles.chipsWrap}>
                       {([2, 3, 4, 5, 7] as const).map((preset) => {
                         const active = weeklyGoal === preset;
@@ -780,8 +821,19 @@ export const HabitEditorSheet: React.FC<HabitEditorSheetProps> = ({
                 </View>
               ) : null}
             </View>
+          </ScrollView>
 
-            {/* Footer Acciones */}
+          {/* Footer fijo */}
+          <View
+            style={[
+              styles.fixedFooter,
+              isMobile && styles.fixedFooterMobile,
+              {
+                borderTopColor: theme.divider,
+                paddingBottom: Math.max(insets.bottom, spacing.md),
+              },
+            ]}
+          >
             <View style={styles.footerActions}>
               {habitToEdit && onDelete ? (
                 <Pressable
@@ -816,7 +868,7 @@ export const HabitEditorSheet: React.FC<HabitEditorSheetProps> = ({
                 </Text>
               </Pressable>
             </View>
-          </ScrollView>
+          </View>
         </LiquidGlassCard>
       </KeyboardAvoidingView>
     </Modal>
@@ -826,27 +878,83 @@ export const HabitEditorSheet: React.FC<HabitEditorSheetProps> = ({
 const styles = StyleSheet.create({
   backdrop: {
     flex: 1,
-    justifyContent: Platform.OS === 'web' ? 'center' : 'flex-end',
+    justifyContent: 'center',
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.lg,
+  },
+  backdropMobile: {
+    justifyContent: 'flex-end',
+    paddingHorizontal: 0,
+    paddingVertical: 0,
+    paddingBottom: 0,
   },
   sheetContainer: {
     width: '100%',
     maxWidth: 580,
-    maxHeight: '90%',
+    maxHeight: '92%',
+    flexShrink: 1,
     alignSelf: 'center',
     borderRadius: radii.xl,
+    overflow: 'hidden',
     ...shadows.modal,
   },
-  sheetContent: {
-    padding: spacing.xl,
+  sheetContainerMobile: {
+    maxWidth: '100%',
+    borderTopLeftRadius: radii.xl,
+    borderTopRightRadius: radii.xl,
+    borderBottomLeftRadius: 0,
+    borderBottomRightRadius: 0,
+  },
+  fixedHeader: {
+    paddingHorizontal: spacing.xl,
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.md,
+    borderBottomWidth: 1,
+    gap: spacing.sm,
+  },
+  fixedHeaderMobile: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.md,
+  },
+  dragHandle: {
+    width: 38,
+    height: 4,
+    borderRadius: 2,
+    alignSelf: 'center',
+    marginBottom: 2,
+  },
+  scrollBody: {
+    flex: 1,
+    minHeight: 0,
+  },
+  scrollContent: {
+    paddingHorizontal: spacing.xl,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.xl,
     gap: spacing.md,
+  },
+  scrollContentMobile: {
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.xl + 8,
+  },
+  fixedFooter: {
+    paddingHorizontal: spacing.xl,
+    paddingTop: spacing.md,
+    borderTopWidth: 1,
+  },
+  fixedFooterMobile: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.sm + 2,
   },
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: spacing.sm,
+  },
+  headerTextCol: {
+    flex: 1,
   },
   sheetTitle: {
     fontSize: 18,
@@ -906,6 +1014,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+  },
+  quantRowWrap: {
+    flexWrap: 'wrap',
+    gap: spacing.sm,
   },
   quantTitle: {
     fontSize: 14,
@@ -984,6 +1096,11 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     alignItems: 'flex-start',
   },
+  rowTwoColsMobile: {
+    flexDirection: 'column',
+    alignItems: 'stretch',
+    gap: spacing.md,
+  },
   iconsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -1019,7 +1136,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
-    marginTop: spacing.xs,
   },
   deleteBtn: {
     width: 46,

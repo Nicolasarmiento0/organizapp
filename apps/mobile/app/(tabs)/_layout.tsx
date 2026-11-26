@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import { Tabs, usePathname, useRouter } from 'expo-router';
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   Bell,
   Calendar,
@@ -104,6 +105,15 @@ const NAV_ITEMS: readonly NavModuleItem[] = [
     module: 'notes',
     icon: FileText,
   },
+];
+
+// En móvil: Agenda · Avisos · Dashboard/Inicio (centro) · Hábitos · Notas
+const MOBILE_DOCK_ITEMS: readonly NavModuleItem[] = [
+  NAV_ITEMS[1]!,
+  NAV_ITEMS[2]!,
+  NAV_ITEMS[0]!,
+  NAV_ITEMS[3]!,
+  NAV_ITEMS[4]!,
 ];
 
 function DesktopIconRail({
@@ -211,12 +221,18 @@ function DesktopIconRail({
 function FloatingLiquidGlassDock({
   state,
   navigation,
-  onOpenQuickCapture,
-}: BottomTabBarProps & { onOpenQuickCapture: () => void }) {
+}: BottomTabBarProps) {
   const { theme } = useTheme();
+  const insets = useSafeAreaInsets();
 
   return (
-    <View style={styles.dockWrapper} pointerEvents="box-none">
+    <View
+      style={[
+        styles.dockWrapper,
+        { bottom: Math.max(insets.bottom, Platform.OS === 'ios' ? 16 : 12) },
+      ]}
+      pointerEvents="box-none"
+    >
       <LiquidGlassCard
         variant="floating"
         intensity={82}
@@ -224,9 +240,10 @@ function FloatingLiquidGlassDock({
         style={styles.dockCard}
         contentStyle={styles.dockContent}
       >
-        {NAV_ITEMS.map((item, idx) => {
+        {MOBILE_DOCK_ITEMS.map((item) => {
           const routeIndex = state.routes.findIndex((r) => r.name === item.routeName);
           const isFocused = state.index === routeIndex;
+          const isCenterDashboard = item.routeName === 'index';
           const IconComponent = item.icon;
 
           const handlePress = () => {
@@ -243,55 +260,45 @@ function FloatingLiquidGlassDock({
           };
 
           return (
-            <React.Fragment key={item.routeName}>
-              {idx === 2 && (
-                <Pressable
-                  onPress={onOpenQuickCapture}
-                  style={({ pressed }) => [
-                    styles.mobileQuickCaptureBtn,
-                    { backgroundColor: theme.accentVolt },
-                    pressed && { transform: [{ scale: 0.94 }], opacity: 0.9 },
-                  ]}
-                  accessibilityRole="button"
-                  accessibilityLabel="Captura rápida Offline-First"
-                >
-                  <Plus size={20} color={theme.accentVoltText} strokeWidth={2.25} />
-                </Pressable>
-              )}
-
-              <Pressable
-                onPress={handlePress}
-                style={styles.tabButton}
-                accessibilityRole="tab"
-                accessibilityState={{ selected: isFocused }}
-              >
-                <View
-                  style={[
-                    styles.iconSquircle,
-                    isFocused && {
-                      backgroundColor: theme.accentPrimary,
-                      borderColor: theme.accentPrimaryBorder,
+            <Pressable
+              key={item.routeName}
+              onPress={handlePress}
+              style={styles.tabButton}
+              accessibilityRole="tab"
+              accessibilityLabel={item.label}
+              accessibilityState={{ selected: isFocused }}
+            >
+              <View
+                style={[
+                  isCenterDashboard ? styles.centerIconSquircle : styles.iconSquircle,
+                  isCenterDashboard &&
+                    !isFocused && {
+                      backgroundColor: theme.pillBg,
+                      borderColor: theme.glassBorder,
                     },
-                  ]}
-                >
-                  <IconComponent
-                    size={18}
-                    color={isFocused ? theme.accentPrimaryText : theme.textSecondary}
-                    strokeWidth={iconMetrics.strokeWidth}
-                  />
-                </View>
-                <Text
-                  style={[
-                    styles.tabLabel,
-                    { color: isFocused ? theme.textPrimary : theme.textSecondary },
-                    isFocused && { fontWeight: '700' },
-                  ]}
-                  numberOfLines={1}
-                >
-                  {item.shortLabel}
-                </Text>
-              </Pressable>
-            </React.Fragment>
+                  isFocused && {
+                    backgroundColor: theme.accentPrimary,
+                    borderColor: theme.accentPrimaryBorder,
+                  },
+                ]}
+              >
+                <IconComponent
+                  size={isCenterDashboard ? 20 : 18}
+                  color={isFocused ? theme.accentPrimaryText : theme.textSecondary}
+                  strokeWidth={isCenterDashboard ? 2 : iconMetrics.strokeWidth}
+                />
+              </View>
+              <Text
+                style={[
+                  styles.tabLabel,
+                  { color: isFocused ? theme.textPrimary : theme.textSecondary },
+                  (isFocused || isCenterDashboard) && { fontWeight: '700' },
+                ]}
+                numberOfLines={1}
+              >
+                {item.shortLabel}
+              </Text>
+            </Pressable>
           );
         })}
       </LiquidGlassCard>
@@ -303,8 +310,7 @@ function TabsShellContent() {
   const { width } = useWindowDimensions();
   const isDesktop = width >= 860;
   const { theme } = useTheme();
-  const { isOpen, initialMode, openQuickCapture, closeQuickCapture } =
-    useQuickCapture();
+  const { isOpen, initialMode, closeQuickCapture } = useQuickCapture();
   const { data: session } = authClient.useSession();
   const activeUserId = resolveActiveUserId(session?.user?.id);
 
@@ -333,12 +339,7 @@ function TabsShellContent() {
             sceneStyle: { backgroundColor: theme.canvas },
           }}
           tabBar={(props) =>
-            isDesktop ? null : (
-              <FloatingLiquidGlassDock
-                {...props}
-                onOpenQuickCapture={() => openQuickCapture('task')}
-              />
-            )
+            isDesktop ? null : <FloatingLiquidGlassDock {...props} />
           }
         >
           <Tabs.Screen name="index" options={{ title: 'Dashboard' }} />
@@ -423,18 +424,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  centerIconSquircle: {
+    width: 42,
+    height: 34,
+    borderRadius: 12,
+    borderCurve: 'continuous',
+    borderWidth: 1,
+    borderColor: 'transparent',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   tabLabel: {
     fontSize: 10,
     fontWeight: '500',
     letterSpacing: -0.1,
-  },
-  mobileQuickCaptureBtn: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginHorizontal: 4,
-    ...shadows.floatingDock,
   },
 });

@@ -63,7 +63,7 @@ function computeReminderTimestamp(preset: ReminderPreset): number | null {
 export const QuickCaptureSheet: React.FC<QuickCaptureSheetProps> = ({
   visible,
   onClose,
-  userId = 'local-user',
+  userId = '',
   initialMode = 'task',
 }) => {
   const { theme, isDark } = useTheme();
@@ -192,7 +192,7 @@ export const QuickCaptureSheet: React.FC<QuickCaptureSheetProps> = ({
                   Captura Instantánea
                 </Text>
                 <Text style={[styles.sheetSubtitle, { color: theme.textSecondary }]}>
-                  Guardado en 0 ms • SQLite Local + D1 Sync
+                  Sincronizado automáticamente en la nube
                 </Text>
               </View>
             </View>
@@ -432,7 +432,7 @@ export const QuickCaptureSheet: React.FC<QuickCaptureSheetProps> = ({
           >
             <Sparkles size={16} color="#FFFFFF" strokeWidth={2} />
             <Text style={styles.submitButtonText}>
-              Guardar en Workspace (0 ms)
+              Guardar en la nube
             </Text>
           </Pressable>
         </LiquidGlassCard>

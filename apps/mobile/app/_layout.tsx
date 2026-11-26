@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Platform, StyleSheet } from 'react-native';
+import { ActivityIndicator, Platform, StyleSheet, Text, View } from 'react-native';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -17,18 +17,18 @@ import {
   Inter_700Bold,
 } from '@expo-google-fonts/inter';
 import { ThemeProvider, useTheme } from '../src/theme/ThemeContext';
-import { initializeLocalDatabase } from '../src/db/client';
-import { claimLocalRecordsForUser, syncWithCloudflareD1 } from '../src/db/sync';
+import { clearLegacyLocalStorageData } from '../src/db/client';
 import {
-  authClient,
-  getOfflineGuestPreferenceSync,
-  loadOfflineGuestPreference,
-  subscribeOfflineGuestPreference,
-} from '../src/services/authClient';
+  hydrateWorkspaceFromCloud,
+  resetCloudSyncState,
+  startCloudAutoSync,
+} from '../src/db/sync';
+import { authClient } from '../src/services/authClient';
 import { configureLocalNotifications } from '../src/services/notifications';
+import { radii, spacing } from '../src/theme/tokens';
 
-// Inicialización síncrona en 0 ms antes del primer frame de UI
-initializeLocalDatabase('local-user');
+// Limpieza de claves heredadas y configuración de notificaciones al iniciar
+clearLegacyLocalStorageData();
 configureLocalNotifications();
 
 // Elimina el borde/anillo azul nativo del navegador en Web al enfocar inputs de texto
@@ -53,57 +53,56 @@ if (Platform.OS === 'web' && typeof document !== 'undefined') {
 function RootNavigator() {
   const { theme } = useTheme();
   const { data: session, isPending, isRefetching } = authClient.useSession();
-  const [isGuestPrefLoaded, setIsGuestPrefLoaded] = useState(false);
-  const [isOfflineGuest, setIsOfflineGuest] = useState<boolean>(() =>
-    getOfflineGuestPreferenceSync()
-  );
+  const [hydratedUserId, setHydratedUserId] = useState<string | null>(null);
   const segments = useSegments();
   const router = useRouter();
 
+  const sessionUserId = session?.user?.id ?? null;
+
   useEffect(() => {
-    let mounted = true;
-    void loadOfflineGuestPreference().then((enabled) => {
-      if (mounted) {
-        setIsOfflineGuest(enabled);
-        setIsGuestPrefLoaded(true);
+    if (!sessionUserId) {
+      return undefined;
+    }
+
+    let cancelled = false;
+    const stopAutoSync = startCloudAutoSync(sessionUserId, {
+      skipInitialHydrate: true,
+    });
+
+    void hydrateWorkspaceFromCloud(sessionUserId).finally(() => {
+      if (!cancelled) {
+        setHydratedUserId(sessionUserId);
       }
     });
-    const unsubscribe = subscribeOfflineGuestPreference(setIsOfflineGuest);
+
     return () => {
-      mounted = false;
-      unsubscribe();
+      cancelled = true;
+      stopAutoSync();
     };
-  }, []);
+  }, [sessionUserId]);
 
   useEffect(() => {
-    if (session?.user?.id) {
-      claimLocalRecordsForUser(session.user.id);
-      void syncWithCloudflareD1();
-    }
-  }, [session?.user?.id]);
-
-  useEffect(() => {
-    if (!isGuestPrefLoaded || ((isPending || isRefetching) && !isOfflineGuest)) {
+    if (isPending || isRefetching) {
       return;
     }
 
     const inAuthGroup = segments[0] === '(auth)';
-    const hasAccess = Boolean(session?.user) || isOfflineGuest;
 
-    if (!hasAccess && !inAuthGroup) {
-      router.replace('/(auth)/login');
-    } else if (Boolean(session?.user) && inAuthGroup) {
+    if (!session?.user) {
+      resetCloudSyncState();
+      setHydratedUserId(null);
+      if (!inAuthGroup) {
+        router.replace('/(auth)/login');
+      }
+    } else if (inAuthGroup) {
       router.replace('/(tabs)');
     }
-  }, [
-    session?.user,
-    isOfflineGuest,
-    isGuestPrefLoaded,
-    isPending,
-    isRefetching,
-    segments,
-    router,
-  ]);
+  }, [session?.user, isPending, isRefetching, segments, router]);
+
+  const inAuthGroup = segments[0] === '(auth)';
+  const showSyncOverlay =
+    !inAuthGroup &&
+    (isPending || !session?.user || hydratedUserId !== session.user.id);
 
   return (
     <GestureHandlerRootView style={[styles.root, { backgroundColor: theme.canvas }]}>
@@ -125,6 +124,34 @@ function RootNavigator() {
             }}
           />
         </Stack>
+
+        {showSyncOverlay ? (
+          <View
+            style={[
+              StyleSheet.absoluteFill,
+              styles.loadingOverlay,
+              { backgroundColor: theme.canvas },
+            ]}
+          >
+            <View
+              style={[
+                styles.loadingMonogram,
+                {
+                  backgroundColor: theme.card,
+                  borderColor: theme.glassBorder,
+                },
+              ]}
+            >
+              <Text style={[styles.loadingMonogramText, { color: theme.textPrimary }]}>
+                O
+              </Text>
+            </View>
+            <ActivityIndicator size="small" color={theme.accentPrimaryLink} />
+            <Text style={[styles.loadingText, { color: theme.textSecondary }]}>
+              Sincronizando tu workspace...
+            </Text>
+          </View>
+        ) : null}
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );
@@ -247,5 +274,29 @@ export default function RootLayout() {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
+  },
+  loadingOverlay: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.md,
+    zIndex: 50,
+  },
+  loadingMonogram: {
+    width: 52,
+    height: 52,
+    borderRadius: radii.squircle,
+    borderCurve: 'continuous',
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loadingMonogramText: {
+    fontSize: 22,
+    fontWeight: '800',
+    letterSpacing: -0.5,
+  },
+  loadingText: {
+    fontSize: 13,
+    fontWeight: '600',
   },
 });

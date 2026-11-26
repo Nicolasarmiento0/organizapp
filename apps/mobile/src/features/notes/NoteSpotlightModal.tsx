@@ -186,9 +186,7 @@ export const NoteSpotlightModal: React.FC<NoteSpotlightModalProps> = ({
               <View style={styles.metaLeft}>
                 <Sparkles size={12} color={theme.accentPrimaryLink} />
                 <Text style={[styles.metaLabel, { color: theme.textMuted }]}>
-                  {Platform.OS === 'web'
-                    ? 'Índice Offline 0 ms'
-                    : 'SQLite FTS5 Offline 0 ms'}
+                  Búsqueda en tu workspace
                 </Text>
               </View>
               <Text style={[styles.metaCount, { color: theme.textMuted }]}>

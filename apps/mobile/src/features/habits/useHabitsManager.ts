@@ -12,6 +12,7 @@ import {
   createLocalId,
   getTodayDateKey,
   localStore,
+  nextMonotonicTimestamp,
   notifyDatabaseChanged,
   subscribeDatabaseChanges,
 } from '../../db/client';
@@ -82,12 +83,12 @@ function recalculateAndPersistHabitStreak(
       streak: currentStreak,
       bestStreak,
       isDirty: true,
-      updatedAt: Date.now(),
+      updatedAt: nextMonotonicTimestamp(habit.updatedAt),
     });
   }
 }
 
-export function useHabitsManager(userId = 'local-user') {
+export function useHabitsManager(userId = '') {
   const todayKey = getTodayDateKey();
   const yesterdayKey = useMemo(() => shiftDateKey(todayKey, -1), [todayKey]);
   const [activeDateKey, setActiveDateKey] = useState<string>(todayKey);
@@ -181,14 +182,14 @@ export function useHabitsManager(userId = 'local-user') {
 
   const createHabit = useCallback(
     (input: UpsertHabitInput): HabitRecord => {
-      const now = Date.now();
+      const now = nextMonotonicTimestamp();
       const days =
         input.scheduledDays.length > 0
           ? Array.from(new Set(input.scheduledDays)).sort((a, b) => a - b)
           : [0, 1, 2, 3, 4, 5, 6];
       const record: HabitRecord = {
         id: createLocalId(),
-        userId,
+        userId: userId || localStore.getActiveUserId(),
         title: input.title.trim(),
         icon: input.icon || 'Sparkles',
         habitType: input.habitType,
@@ -260,7 +261,7 @@ export function useHabitsManager(userId = 'local-user') {
         timeOfDay: input.timeOfDay ?? 'any',
         reminderTime: input.reminderTime?.trim() || null,
         isDirty: true,
-        updatedAt: Date.now(),
+        updatedAt: nextMonotonicTimestamp(existing.updatedAt),
       });
 
       recalculateAndPersistHabitStreak(habitId, todayKey);
@@ -273,7 +274,7 @@ export function useHabitsManager(userId = 'local-user') {
   const deleteHabit = useCallback((habitId: string) => {
     const existing = localStore.getHabitById(habitId);
     if (!existing) return;
-    const now = Date.now();
+    const now = nextMonotonicTimestamp(existing.updatedAt);
     localStore.updateHabit(habitId, {
       deletedAt: now,
       isDirty: true,
@@ -290,7 +291,9 @@ export function useHabitsManager(userId = 'local-user') {
 
       const logId = `${habitId}_${targetDateKey}`;
       const existingLog = localStore.getHabitLogById(logId);
-      const now = Date.now();
+      const now = nextMonotonicTimestamp(
+        Math.max(habit.updatedAt, existingLog?.updatedAt ?? 0)
+      );
       const willComplete =
         !existingLog ||
         Boolean(existingLog.deletedAt) ||
@@ -299,7 +302,7 @@ export function useHabitsManager(userId = 'local-user') {
       localStore.upsertHabitLog({
         id: logId,
         habitId,
-        userId: habit.userId || userId,
+        userId: habit.userId || userId || localStore.getActiveUserId(),
         dateKey: targetDateKey,
         completedCount: willComplete ? habit.targetPerDay : 0,
         isCompleted: willComplete,
@@ -327,12 +330,14 @@ export function useHabitsManager(userId = 'local-user') {
         existingLog && !existingLog.deletedAt ? existingLog.completedCount : 0;
       const nextCount = Math.max(0, currentCount + delta);
       const isCompleted = nextCount >= Math.max(1, habit.targetPerDay);
-      const now = Date.now();
+      const now = nextMonotonicTimestamp(
+        Math.max(habit.updatedAt, existingLog?.updatedAt ?? 0)
+      );
 
       localStore.upsertHabitLog({
         id: logId,
         habitId,
-        userId: habit.userId || userId,
+        userId: habit.userId || userId || localStore.getActiveUserId(),
         dateKey: targetDateKey,
         completedCount: nextCount,
         isCompleted,
@@ -358,7 +363,9 @@ export function useHabitsManager(userId = 'local-user') {
       const existingLog = localStore.getHabitLogById(logId);
       const isCurrentlyShielded =
         existingLog && !existingLog.deletedAt && existingLog.status === 'rest_shield';
-      const now = Date.now();
+      const now = nextMonotonicTimestamp(
+        Math.max(habit.updatedAt, existingLog?.updatedAt ?? 0)
+      );
 
       if (!isCurrentlyShielded && shieldStats.available <= 0) {
         return;
@@ -367,7 +374,7 @@ export function useHabitsManager(userId = 'local-user') {
       localStore.upsertHabitLog({
         id: logId,
         habitId,
-        userId: habit.userId || userId,
+        userId: habit.userId || userId || localStore.getActiveUserId(),
         dateKey: targetDateKey,
         completedCount: 0,
         isCompleted: false,
@@ -394,7 +401,7 @@ export function useHabitsManager(userId = 'local-user') {
         isPaused: nextPaused,
         pausedUntil: nextPaused ? pausedUntil : null,
         isDirty: true,
-        updatedAt: Date.now(),
+        updatedAt: nextMonotonicTimestamp(habit.updatedAt),
       });
 
       recalculateAndPersistHabitStreak(habitId, todayKey);

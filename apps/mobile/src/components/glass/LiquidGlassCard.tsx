@@ -18,6 +18,7 @@ export interface LiquidGlassCardProps extends ViewProps {
   intensity?: number;
   variant?: 'glass' | 'solid' | 'floating' | 'tonal' | 'cobalt';
   noPadding?: boolean;
+  fillHeight?: boolean;
 }
 
 /**
@@ -33,6 +34,7 @@ export const LiquidGlassCard: React.FC<LiquidGlassCardProps> = ({
   intensity = 65,
   variant = 'glass',
   noPadding = false,
+  fillHeight = false,
   ...rest
 }) => {
   const { theme } = useTheme();
@@ -60,7 +62,13 @@ export const LiquidGlassCard: React.FC<LiquidGlassCardProps> = ({
           ]}
           pointerEvents="none"
         />
-        <View style={[!noPadding && styles.defaultPadding, contentStyle]}>
+        <View
+          style={[
+            !noPadding && styles.defaultPadding,
+            fillHeight && styles.fillHeight,
+            contentStyle,
+          ]}
+        >
           {children}
         </View>
       </View>
@@ -75,6 +83,7 @@ export const LiquidGlassCard: React.FC<LiquidGlassCardProps> = ({
           intensity={intensity}
           style={[
             styles.iosBlurContainer,
+            fillHeight && styles.fillHeight,
             { borderColor: theme.glassBorder },
           ]}
         >
@@ -89,6 +98,7 @@ export const LiquidGlassCard: React.FC<LiquidGlassCardProps> = ({
             style={[
               { backgroundColor: theme.glassFill },
               !noPadding && styles.defaultPadding,
+              fillHeight && styles.fillHeight,
               contentStyle,
             ]}
           >
@@ -121,7 +131,13 @@ export const LiquidGlassCard: React.FC<LiquidGlassCardProps> = ({
         ]}
         pointerEvents="none"
       />
-      <View style={[!noPadding && styles.defaultPadding, contentStyle]}>
+      <View
+        style={[
+          !noPadding && styles.defaultPadding,
+          fillHeight && styles.fillHeight,
+          contentStyle,
+        ]}
+      >
         {children}
       </View>
     </View>
@@ -155,6 +171,10 @@ const styles = StyleSheet.create({
   },
   defaultPadding: {
     padding: spacing.lg,
+  },
+  fillHeight: {
+    flex: 1,
+    minHeight: 0,
   },
 });
 

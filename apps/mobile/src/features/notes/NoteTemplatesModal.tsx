@@ -50,7 +50,7 @@ export const NoteTemplatesModal: React.FC<NoteTemplatesModalProps> = ({
                     Plantillas de 1 Toque
                   </Text>
                   <Text style={[styles.subtitle, { color: theme.textMuted }]}>
-                    Crea estructuras listas con bloques en 0 ms
+                    Crea estructuras listas sincronizadas en la nube
                   </Text>
                 </View>
               </View>

@@ -4,6 +4,7 @@ import {
   localStore,
   createLocalId,
   getTodayDateKey,
+  nextMonotonicTimestamp,
   notifyDatabaseChanged,
   subscribeDatabaseChanges,
 } from '../../db/client';
@@ -21,10 +22,10 @@ export interface CreateWorkBlockInput {
 }
 
 export function insertWorkBlockOfflineFirst(input: CreateWorkBlockInput): WorkBlockRecord {
-  const now = Date.now();
+  const now = nextMonotonicTimestamp();
   const record: WorkBlockRecord = {
     id: createLocalId(),
-    userId: input.userId || 'local-user',
+    userId: input.userId || localStore.getActiveUserId(),
     title: input.title.trim(),
     blockType: input.blockType ?? 'deep_work',
     dateKey: input.dateKey ?? getTodayDateKey(),
@@ -49,7 +50,7 @@ export function insertWorkBlockOfflineFirst(input: CreateWorkBlockInput): WorkBl
  * FASE 2: Hook Offline-First para Calendario Visual, Horarios de Trabajo y Time-Blocking
  * (Compatible con Web, iOS y Android).
  */
-export function useCalendarSchedule(initialDateKey = getTodayDateKey(), userId = 'local-user') {
+export function useCalendarSchedule(initialDateKey = getTodayDateKey(), userId = '') {
   const [selectedDateKey, setSelectedDateKey] = useState(initialDateKey);
   const [blocks, setBlocks] = useState<WorkBlockRecord[]>(() =>
     localStore.getWorkBlocksForDate(initialDateKey)
@@ -76,7 +77,8 @@ export function useCalendarSchedule(initialDateKey = getTodayDateKey(), userId =
   );
 
   const removeWorkBlock = useCallback((blockId: string) => {
-    const now = Date.now();
+    const existing = localStore.getWorkBlockById(blockId);
+    const now = nextMonotonicTimestamp(existing?.updatedAt);
     localStore.updateWorkBlock(blockId, {
       deletedAt: now,
       isDirty: true,

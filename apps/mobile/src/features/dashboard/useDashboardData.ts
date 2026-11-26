@@ -85,7 +85,7 @@ function computeActiveDaysInMonth(
   return result;
 }
 
-export function useDashboardData(userId = 'local-user') {
+export function useDashboardData(userId = '') {
   const todayKey = getTodayDateKey();
   const now = new Date();
 

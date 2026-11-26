@@ -12,6 +12,7 @@ import {
   localStore,
   createLocalId,
   getTodayDateKey,
+  nextMonotonicTimestamp,
   notifyDatabaseChanged,
   subscribeDatabaseChanges,
 } from '../../db/client';
@@ -95,13 +96,13 @@ function readTodaySnapshotFromLocalStore(todayKey: string): {
 }
 
 export function insertTaskOfflineFirst(input: CreateTaskInput): TaskRecord {
-  const now = Date.now();
+  const now = nextMonotonicTimestamp();
   const id = createLocalId();
   const todayKey = getTodayDateKey();
 
   const record: TaskRecord = {
     id,
-    userId: input.userId || 'local-user',
+    userId: input.userId || localStore.getActiveUserId(),
     title: input.title.trim(),
     notes: input.notes?.trim() || null,
     category: input.category ?? 'today',
@@ -131,12 +132,14 @@ export function insertTaskOfflineFirst(input: CreateTaskInput): TaskRecord {
       reminderAtMs: record.reminderAt,
     }).then((notificationId) => {
       if (notificationId) {
+        const current = localStore.getTaskById(record.id);
         localStore.updateTask(record.id, {
           notificationId,
-          updatedAt: Date.now(),
+          updatedAt: nextMonotonicTimestamp(current?.updatedAt ?? record.updatedAt),
           isDirty: true,
         });
         notifyDatabaseChanged();
+        triggerBackgroundSync();
       }
     });
   }
@@ -145,7 +148,7 @@ export function insertTaskOfflineFirst(input: CreateTaskInput): TaskRecord {
 }
 
 export function insertHabitOfflineFirst(input: CreateHabitInput): HabitRecord {
-  const now = Date.now();
+  const now = nextMonotonicTimestamp();
   const freq = input.frequency ?? 'daily';
   const defaultDays =
     freq === 'weekdays'
@@ -157,7 +160,7 @@ export function insertHabitOfflineFirst(input: CreateHabitInput): HabitRecord {
 
   const record: HabitRecord = {
     id: createLocalId(),
-    userId: input.userId || 'local-user',
+    userId: input.userId || localStore.getActiveUserId(),
     title: input.title.trim(),
     icon: input.icon ?? 'Sparkles',
     habitType: input.habitType ?? 'binary',
@@ -189,7 +192,7 @@ export function insertHabitOfflineFirst(input: CreateHabitInput): HabitRecord {
  * Hook React para la Vista "Hoy" (FASE 1: Hábitos + Tareas/Recordatorios).
  * Compatible 100% con Web, iOS y Android a 0 ms de latencia.
  */
-export function useTodayCockpit(userId = 'local-user') {
+export function useTodayCockpit(userId = '') {
   const todayKey = getTodayDateKey();
   const [snapshot, setSnapshot] = useState(() =>
     readTodaySnapshotFromLocalStore(todayKey)
@@ -216,7 +219,7 @@ export function useTodayCockpit(userId = 'local-user') {
       return;
     }
 
-    const now = Date.now();
+    const now = nextMonotonicTimestamp(existing.updatedAt);
     const nextCompleted = !existing.isCompleted;
 
     localStore.updateTask(taskId, {
@@ -240,7 +243,7 @@ export function useTodayCockpit(userId = 'local-user') {
       return;
     }
 
-    const now = Date.now();
+    const now = nextMonotonicTimestamp(existing.updatedAt);
     localStore.updateTask(taskId, {
       deletedAt: now,
       isDirty: true,
@@ -273,14 +276,16 @@ export function useTodayCockpit(userId = 'local-user') {
       const deterministicLogId = `${habitId}_${currentDayKey}`;
       const existingLog = localStore.getHabitLogById(deterministicLogId);
 
-      const now = Date.now();
+      const now = nextMonotonicTimestamp(
+        Math.max(habit.updatedAt, existingLog?.updatedAt ?? 0)
+      );
       const willComplete =
         !existingLog || !existingLog.isCompleted || Boolean(existingLog.deletedAt);
 
       localStore.upsertHabitLog({
         id: deterministicLogId,
         habitId,
-        userId: habit.userId || userId,
+        userId: habit.userId || userId || localStore.getActiveUserId(),
         dateKey: currentDayKey,
         completedCount: willComplete ? habit.targetPerDay : 0,
         isCompleted: willComplete,

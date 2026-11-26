@@ -130,7 +130,6 @@ app.use('/api/sync', async (c, next) => {
 app.post('/api/sync', async (c) => {
   const user = c.get('user');
   const db = drizzle(c.env.DB);
-  const serverTimestamp = Date.now();
 
   let body: SyncPushRequest;
   try {
@@ -140,6 +139,8 @@ app.post('/api/sync', async (c) => {
   }
 
   const lastSyncedAt = Number.isFinite(body.lastSyncedAt) ? Math.max(0, body.lastSyncedAt) : 0;
+  const serverTimestamp = Math.max(Date.now(), lastSyncedAt + 1);
+  let maxWrittenUpdatedAt = serverTimestamp;
   const incoming = body.changes ?? {};
   let acceptedCount = 0;
 
@@ -147,17 +148,36 @@ app.post('/api/sync', async (c) => {
     // 1. Upsert Tareas / Recordatorios (Last-Write-Wins por updatedAt)
     for (const item of incoming.tasks ?? []) {
       const existing = await db
-        .select({ updatedAt: tasks.updatedAt })
+        .select({ userId: tasks.userId, updatedAt: tasks.updatedAt })
         .from(tasks)
-        .where(and(eq(tasks.id, item.id), eq(tasks.userId, user.id)))
+        .where(eq(tasks.id, item.id))
         .get();
 
-      if (!existing || item.updatedAt >= existing.updatedAt) {
+      if (existing && existing.userId !== user.id) {
+        continue;
+      }
+
+      if (!existing || (item.updatedAt ?? 0) >= existing.updatedAt) {
+        const canonicalUpdatedAt = Math.max(serverTimestamp, item.updatedAt || serverTimestamp);
+        maxWrittenUpdatedAt = Math.max(maxWrittenUpdatedAt, canonicalUpdatedAt);
         const sanitized = {
-          ...item,
+          id: item.id,
           userId: user.id,
+          title: item.title,
+          notes: item.notes ?? null,
+          category: item.category ?? 'today',
+          priority: item.priority ?? 2,
+          isCompleted: Boolean(item.isCompleted),
+          completedAt: item.completedAt ?? null,
+          dueDate: item.dueDate ?? null,
+          reminderAt: item.reminderAt ?? null,
+          notificationId: item.notificationId ?? null,
+          sourcePageId: item.sourcePageId ?? null,
+          sourceBlockId: item.sourceBlockId ?? null,
           isDirty: false,
-          updatedAt: item.updatedAt || serverTimestamp,
+          deletedAt: item.deletedAt ?? null,
+          createdAt: item.createdAt || canonicalUpdatedAt,
+          updatedAt: canonicalUpdatedAt,
         };
         await db
           .insert(tasks)
@@ -173,17 +193,40 @@ app.post('/api/sync', async (c) => {
     // 2. Upsert Hábitos
     for (const item of incoming.habits ?? []) {
       const existing = await db
-        .select({ updatedAt: habits.updatedAt })
+        .select({ userId: habits.userId, updatedAt: habits.updatedAt })
         .from(habits)
-        .where(and(eq(habits.id, item.id), eq(habits.userId, user.id)))
+        .where(eq(habits.id, item.id))
         .get();
 
-      if (!existing || item.updatedAt >= existing.updatedAt) {
+      if (existing && existing.userId !== user.id) {
+        continue;
+      }
+
+      if (!existing || (item.updatedAt ?? 0) >= existing.updatedAt) {
+        const canonicalUpdatedAt = Math.max(serverTimestamp, item.updatedAt || serverTimestamp);
+        maxWrittenUpdatedAt = Math.max(maxWrittenUpdatedAt, canonicalUpdatedAt);
         const sanitized = {
-          ...item,
+          id: item.id,
           userId: user.id,
+          title: item.title,
+          icon: item.icon ?? 'Sparkles',
+          habitType: item.habitType ?? 'binary',
+          unit: item.unit ?? null,
+          frequency: item.frequency ?? 'daily',
+          scheduledDays: item.scheduledDays ?? '[0,1,2,3,4,5,6]',
+          targetPerDay: item.targetPerDay ?? 1,
+          weeklyGoal: item.weeklyGoal ?? null,
+          streak: item.streak ?? 0,
+          bestStreak: item.bestStreak ?? 0,
+          isPaused: Boolean(item.isPaused),
+          pausedUntil: item.pausedUntil ?? null,
+          timeOfDay: item.timeOfDay ?? 'any',
+          reminderTime: item.reminderTime ?? null,
+          isArchived: Boolean(item.isArchived),
           isDirty: false,
-          updatedAt: item.updatedAt || serverTimestamp,
+          deletedAt: item.deletedAt ?? null,
+          createdAt: item.createdAt || canonicalUpdatedAt,
+          updatedAt: canonicalUpdatedAt,
         };
         await db
           .insert(habits)
@@ -199,17 +242,29 @@ app.post('/api/sync', async (c) => {
     // 3. Upsert Registros de Hábitos (Habit Logs)
     for (const item of incoming.habitLogs ?? []) {
       const existing = await db
-        .select({ updatedAt: habitLogs.updatedAt })
+        .select({ userId: habitLogs.userId, updatedAt: habitLogs.updatedAt })
         .from(habitLogs)
-        .where(and(eq(habitLogs.id, item.id), eq(habitLogs.userId, user.id)))
+        .where(eq(habitLogs.id, item.id))
         .get();
 
-      if (!existing || item.updatedAt >= existing.updatedAt) {
+      if (existing && existing.userId !== user.id) {
+        continue;
+      }
+
+      if (!existing || (item.updatedAt ?? 0) >= existing.updatedAt) {
+        const canonicalUpdatedAt = Math.max(serverTimestamp, item.updatedAt || serverTimestamp);
+        maxWrittenUpdatedAt = Math.max(maxWrittenUpdatedAt, canonicalUpdatedAt);
         const sanitized = {
-          ...item,
+          id: item.id,
+          habitId: item.habitId,
           userId: user.id,
+          dateKey: item.dateKey,
+          completedCount: item.completedCount ?? 1,
+          isCompleted: Boolean(item.isCompleted),
+          status: item.status ?? (item.isCompleted ? 'completed' : 'partial'),
           isDirty: false,
-          updatedAt: item.updatedAt || serverTimestamp,
+          deletedAt: item.deletedAt ?? null,
+          updatedAt: canonicalUpdatedAt,
         };
         await db
           .insert(habitLogs)
@@ -225,17 +280,31 @@ app.post('/api/sync', async (c) => {
     // 3b. Upsert Premios de Hábitos (Habit Rewards)
     for (const item of incoming.habitRewards ?? []) {
       const existing = await db
-        .select({ updatedAt: habitRewards.updatedAt })
+        .select({ userId: habitRewards.userId, updatedAt: habitRewards.updatedAt })
         .from(habitRewards)
-        .where(and(eq(habitRewards.id, item.id), eq(habitRewards.userId, user.id)))
+        .where(eq(habitRewards.id, item.id))
         .get();
 
-      if (!existing || item.updatedAt >= existing.updatedAt) {
+      if (existing && existing.userId !== user.id) {
+        continue;
+      }
+
+      if (!existing || (item.updatedAt ?? 0) >= existing.updatedAt) {
+        const canonicalUpdatedAt = Math.max(serverTimestamp, item.updatedAt || serverTimestamp);
+        maxWrittenUpdatedAt = Math.max(maxWrittenUpdatedAt, canonicalUpdatedAt);
         const sanitized = {
-          ...item,
+          id: item.id,
           userId: user.id,
+          title: item.title,
+          description: item.description ?? null,
+          costPoints: item.costPoints ?? 250,
+          icon: item.icon ?? 'Award',
+          redeemedCount: item.redeemedCount ?? 0,
+          lastRedeemedAt: item.lastRedeemedAt ?? null,
           isDirty: false,
-          updatedAt: item.updatedAt || serverTimestamp,
+          deletedAt: item.deletedAt ?? null,
+          createdAt: item.createdAt || canonicalUpdatedAt,
+          updatedAt: canonicalUpdatedAt,
         };
         await db
           .insert(habitRewards)
@@ -251,17 +320,33 @@ app.post('/api/sync', async (c) => {
     // 4. Upsert Bloques de Horario / Time-Blocking (Fase 2)
     for (const item of incoming.workBlocks ?? []) {
       const existing = await db
-        .select({ updatedAt: workBlocks.updatedAt })
+        .select({ userId: workBlocks.userId, updatedAt: workBlocks.updatedAt })
         .from(workBlocks)
-        .where(and(eq(workBlocks.id, item.id), eq(workBlocks.userId, user.id)))
+        .where(eq(workBlocks.id, item.id))
         .get();
 
-      if (!existing || item.updatedAt >= existing.updatedAt) {
+      if (existing && existing.userId !== user.id) {
+        continue;
+      }
+
+      if (!existing || (item.updatedAt ?? 0) >= existing.updatedAt) {
+        const canonicalUpdatedAt = Math.max(serverTimestamp, item.updatedAt || serverTimestamp);
+        maxWrittenUpdatedAt = Math.max(maxWrittenUpdatedAt, canonicalUpdatedAt);
         const sanitized = {
-          ...item,
+          id: item.id,
           userId: user.id,
+          title: item.title,
+          blockType: item.blockType ?? 'deep_work',
+          dateKey: item.dateKey,
+          startTime: item.startTime,
+          endTime: item.endTime,
+          locationOrLink: item.locationOrLink ?? null,
+          isRecurring: Boolean(item.isRecurring),
+          recurrenceDays: item.recurrenceDays ?? null,
           isDirty: false,
-          updatedAt: item.updatedAt || serverTimestamp,
+          deletedAt: item.deletedAt ?? null,
+          createdAt: item.createdAt || canonicalUpdatedAt,
+          updatedAt: canonicalUpdatedAt,
         };
         await db
           .insert(workBlocks)
@@ -277,17 +362,33 @@ app.post('/api/sync', async (c) => {
     // 5. Upsert Páginas de Notas / Markdown (Fase 2)
     for (const item of incoming.notePages ?? []) {
       const existing = await db
-        .select({ updatedAt: notePages.updatedAt })
+        .select({ userId: notePages.userId, updatedAt: notePages.updatedAt })
         .from(notePages)
-        .where(and(eq(notePages.id, item.id), eq(notePages.userId, user.id)))
+        .where(eq(notePages.id, item.id))
         .get();
 
-      if (!existing || item.updatedAt >= existing.updatedAt) {
+      if (existing && existing.userId !== user.id) {
+        continue;
+      }
+
+      if (!existing || (item.updatedAt ?? 0) >= existing.updatedAt) {
+        const canonicalUpdatedAt = Math.max(serverTimestamp, item.updatedAt || serverTimestamp);
+        maxWrittenUpdatedAt = Math.max(maxWrittenUpdatedAt, canonicalUpdatedAt);
         const sanitized = {
-          ...item,
+          id: item.id,
           userId: user.id,
+          parentId: item.parentId ?? null,
+          title: item.title,
+          icon: item.icon ?? 'FileText',
+          contentMarkdown: item.contentMarkdown ?? '',
+          blocksJson: item.blocksJson ?? null,
+          tags: item.tags ?? '[]',
+          isPinned: Boolean(item.isPinned),
+          sortOrder: item.sortOrder ?? 0,
           isDirty: false,
-          updatedAt: item.updatedAt || serverTimestamp,
+          deletedAt: item.deletedAt ?? null,
+          createdAt: item.createdAt || canonicalUpdatedAt,
+          updatedAt: canonicalUpdatedAt,
         };
         await db
           .insert(notePages)
@@ -300,7 +401,7 @@ app.post('/api/sync', async (c) => {
       }
     }
 
-    // 6. Pull: Obtener todos los cambios modificados desde `lastSyncedAt`
+    // 6. Pull: Obtener todos los cambios modificados desde `lastSyncedAt` (o todo si lastSyncedAt === 0)
     const [
       deltaTasks,
       deltaHabits,
@@ -312,39 +413,78 @@ app.post('/api/sync', async (c) => {
       db
         .select()
         .from(tasks)
-        .where(and(eq(tasks.userId, user.id), gt(tasks.updatedAt, lastSyncedAt)))
+        .where(
+          lastSyncedAt === 0
+            ? eq(tasks.userId, user.id)
+            : and(eq(tasks.userId, user.id), gt(tasks.updatedAt, lastSyncedAt))
+        )
         .all(),
       db
         .select()
         .from(habits)
-        .where(and(eq(habits.userId, user.id), gt(habits.updatedAt, lastSyncedAt)))
+        .where(
+          lastSyncedAt === 0
+            ? eq(habits.userId, user.id)
+            : and(eq(habits.userId, user.id), gt(habits.updatedAt, lastSyncedAt))
+        )
         .all(),
       db
         .select()
         .from(habitLogs)
-        .where(and(eq(habitLogs.userId, user.id), gt(habitLogs.updatedAt, lastSyncedAt)))
+        .where(
+          lastSyncedAt === 0
+            ? eq(habitLogs.userId, user.id)
+            : and(eq(habitLogs.userId, user.id), gt(habitLogs.updatedAt, lastSyncedAt))
+        )
         .all(),
       db
         .select()
         .from(habitRewards)
-        .where(and(eq(habitRewards.userId, user.id), gt(habitRewards.updatedAt, lastSyncedAt)))
+        .where(
+          lastSyncedAt === 0
+            ? eq(habitRewards.userId, user.id)
+            : and(eq(habitRewards.userId, user.id), gt(habitRewards.updatedAt, lastSyncedAt))
+        )
         .all(),
       db
         .select()
         .from(workBlocks)
-        .where(and(eq(workBlocks.userId, user.id), gt(workBlocks.updatedAt, lastSyncedAt)))
+        .where(
+          lastSyncedAt === 0
+            ? eq(workBlocks.userId, user.id)
+            : and(eq(workBlocks.userId, user.id), gt(workBlocks.updatedAt, lastSyncedAt))
+        )
         .all(),
       db
         .select()
         .from(notePages)
-        .where(and(eq(notePages.userId, user.id), gt(notePages.updatedAt, lastSyncedAt)))
+        .where(
+          lastSyncedAt === 0
+            ? eq(notePages.userId, user.id)
+            : and(eq(notePages.userId, user.id), gt(notePages.updatedAt, lastSyncedAt))
+        )
         .all(),
     ]);
+
+    let responseTimestamp = Math.max(serverTimestamp, maxWrittenUpdatedAt);
+    for (const row of [
+      ...deltaTasks,
+      ...deltaHabits,
+      ...deltaHabitLogs,
+      ...deltaHabitRewards,
+      ...deltaWorkBlocks,
+      ...deltaNotePages,
+    ]) {
+      if (row.updatedAt > responseTimestamp) {
+        responseTimestamp = row.updatedAt;
+      }
+    }
 
     logEvent('info', 'sync_batch_completed', {
       userId: user.id,
       acceptedCount,
       lastSyncedAt,
+      responseTimestamp,
       pulledCount:
         deltaTasks.length +
         deltaHabits.length +
@@ -356,7 +496,7 @@ app.post('/api/sync', async (c) => {
 
     const response: SyncBatchResponse = {
       ok: true,
-      serverTimestamp,
+      serverTimestamp: responseTimestamp,
       acceptedCount,
       changes: {
         tasks: deltaTasks,
@@ -398,38 +538,76 @@ app.get('/api/sync/pull', async (c) => {
     db
       .select()
       .from(tasks)
-      .where(and(eq(tasks.userId, user.id), gt(tasks.updatedAt, since)))
+      .where(
+        since === 0
+          ? eq(tasks.userId, user.id)
+          : and(eq(tasks.userId, user.id), gt(tasks.updatedAt, since))
+      )
       .all(),
     db
       .select()
       .from(habits)
-      .where(and(eq(habits.userId, user.id), gt(habits.updatedAt, since)))
+      .where(
+        since === 0
+          ? eq(habits.userId, user.id)
+          : and(eq(habits.userId, user.id), gt(habits.updatedAt, since))
+      )
       .all(),
     db
       .select()
       .from(habitLogs)
-      .where(and(eq(habitLogs.userId, user.id), gt(habitLogs.updatedAt, since)))
+      .where(
+        since === 0
+          ? eq(habitLogs.userId, user.id)
+          : and(eq(habitLogs.userId, user.id), gt(habitLogs.updatedAt, since))
+      )
       .all(),
     db
       .select()
       .from(habitRewards)
-      .where(and(eq(habitRewards.userId, user.id), gt(habitRewards.updatedAt, since)))
+      .where(
+        since === 0
+          ? eq(habitRewards.userId, user.id)
+          : and(eq(habitRewards.userId, user.id), gt(habitRewards.updatedAt, since))
+      )
       .all(),
     db
       .select()
       .from(workBlocks)
-      .where(and(eq(workBlocks.userId, user.id), gt(workBlocks.updatedAt, since)))
+      .where(
+        since === 0
+          ? eq(workBlocks.userId, user.id)
+          : and(eq(workBlocks.userId, user.id), gt(workBlocks.updatedAt, since))
+      )
       .all(),
     db
       .select()
       .from(notePages)
-      .where(and(eq(notePages.userId, user.id), gt(notePages.updatedAt, since)))
+      .where(
+        since === 0
+          ? eq(notePages.userId, user.id)
+          : and(eq(notePages.userId, user.id), gt(notePages.updatedAt, since))
+      )
       .all(),
   ]);
 
+  let serverTimestamp = Date.now();
+  for (const row of [
+    ...deltaTasks,
+    ...deltaHabits,
+    ...deltaHabitLogs,
+    ...deltaHabitRewards,
+    ...deltaWorkBlocks,
+    ...deltaNotePages,
+  ]) {
+    if (row.updatedAt > serverTimestamp) {
+      serverTimestamp = row.updatedAt;
+    }
+  }
+
   const response: SyncBatchResponse = {
     ok: true,
-    serverTimestamp: Date.now(),
+    serverTimestamp,
     acceptedCount: 0,
     changes: {
       tasks: deltaTasks,

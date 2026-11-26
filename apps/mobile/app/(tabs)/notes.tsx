@@ -447,7 +447,7 @@ export default function NotesWorkspaceScreen() {
 
               <View style={styles.headerTitleCol}>
                 <Text style={[styles.phaseTag, { color: theme.accentPrimaryLink }]}>
-                  NOTION + OBSIDIAN • 0 MS OFFLINE
+                  NOTION + OBSIDIAN • CLOUD SYNC
                 </Text>
                 <Text style={[styles.screenTitle, { color: theme.textPrimary }]}>
                   Notas & Documentos
@@ -852,7 +852,7 @@ export default function NotesWorkspaceScreen() {
                           { color: theme.accentPrimaryLink },
                         ]}
                       >
-                        Autoguardado 0 ms
+                        Guardado en la nube
                       </Text>
                     </View>
 

@@ -13,7 +13,6 @@ import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   ArrowRight,
-  Database,
   Eye,
   EyeOff,
   Lock,
@@ -26,15 +25,8 @@ import {
 import { iconMetrics, radii, spacing, typography } from '../../src/theme/tokens';
 import { useTheme } from '../../src/theme/ThemeContext';
 import { LiquidGlassCard } from '../../src/components/glass/LiquidGlassCard';
-import {
-  API_BASE_URL,
-  authClient,
-  setOfflineGuestPreference,
-} from '../../src/services/authClient';
-import {
-  claimLocalRecordsForUser,
-  syncWithCloudflareD1,
-} from '../../src/db/sync';
+import { API_BASE_URL, authClient } from '../../src/services/authClient';
+import { hydrateWorkspaceFromCloud } from '../../src/db/sync';
 
 type ApiHealthState = 'checking' | 'online' | 'offline';
 
@@ -85,7 +77,7 @@ function mapAuthErrorMessage(err: {
   const code = (err.code || '').toLowerCase();
 
   if (code === 'auth_timeout' || msg.includes('abort') || msg.includes('timeout')) {
-    return `El servidor (${API_BASE_URL}) tardó demasiado en responder. Verifica que "npm run dev:api" esté activo o continúa en Modo Local.`;
+    return `El servidor (${API_BASE_URL}) tardó demasiado en responder. Verifica que "npm run dev:api:cloud" o "npm run dev:api" esté activo e intenta de nuevo.`;
   }
 
   if (
@@ -94,7 +86,7 @@ function mapAuthErrorMessage(err: {
     msg.includes('network') ||
     msg.includes('load failed')
   ) {
-    return `No se pudo conectar al servidor (${API_BASE_URL}). Ejecuta "npm run dev:api" o continúa en Modo Local.`;
+    return `No se pudo conectar al servidor (${API_BASE_URL}). Verifica tu conexión o que "npm run dev:api:cloud" o "npm run dev:api" esté activo.`;
   }
 
   if (
@@ -217,19 +209,13 @@ export default function LoginScreen() {
         return;
       }
 
-      await setOfflineGuestPreference(false);
       await withTimeout(
         Promise.resolve(refetchSession()),
         4000,
         'SESSION_REFETCH_TIMEOUT'
       ).catch(() => undefined);
 
-      try {
-        claimLocalRecordsForUser(authenticatedUserId);
-      } catch {
-        // Mantener navegación aunque falle la migración de registros locales
-      }
-      void syncWithCloudflareD1();
+      await hydrateWorkspaceFromCloud(authenticatedUserId);
 
       if (isMountedRef.current) {
         setApiHealth('online');
@@ -266,11 +252,6 @@ export default function LoginScreen() {
         setIsSubmitting(false);
       }
     }
-  };
-
-  const handleContinueOfflineFirst = async () => {
-    await setOfflineGuestPreference(true);
-    router.replace('/(tabs)');
   };
 
   return (
@@ -575,24 +556,6 @@ export default function LoginScreen() {
               />
             </Pressable>
           </LiquidGlassCard>
-
-          {/* Opción secundaria discreta: Modo Local 0 ms */}
-          <Pressable
-            onPress={() => void handleContinueOfflineFirst()}
-            style={({ pressed }) => [
-              styles.offlineButton,
-              {
-                backgroundColor: theme.card,
-                borderColor: theme.glassBorder,
-              },
-              pressed && styles.buttonPressed,
-            ]}
-          >
-            <Database size={15} color={theme.textSecondary} strokeWidth={1.9} />
-            <Text style={[styles.offlineButtonText, { color: theme.textSecondary }]}>
-              Continuar sin cuenta (Modo Local 0 ms)
-            </Text>
-          </Pressable>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -743,19 +706,6 @@ const styles = StyleSheet.create({
   primaryButtonText: {
     fontSize: 15,
     fontWeight: '700',
-  },
-  offlineButton: {
-    borderWidth: 1,
-    borderRadius: radii.md,
-    height: 46,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.sm,
-  },
-  offlineButtonText: {
-    fontSize: 13,
-    fontWeight: '600',
   },
   buttonPressed: {
     opacity: 0.85,

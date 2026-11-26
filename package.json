@@ -14,6 +14,7 @@
     "android": "npm --workspace=@organiza/mobile run android",
     "dev:mobile": "npm --workspace=@organiza/mobile run start",
     "dev:api": "npm --workspace=@organiza/api run dev",
+    "dev:api:cloud": "npm --workspace=@organiza/api run dev:cloud",
     "db:generate": "npm --workspace=@organiza/api run db:generate",
     "db:migrate:local": "npm --workspace=@organiza/api run db:migrate:local",
     "db:migrate:remote": "npm --workspace=@organiza/api run db:migrate:remote",

@@ -1,8 +1,9 @@
 import React, { createContext, useCallback, useContext, useMemo, useState } from 'react';
-import { localStore } from '../db/client';
+import { Platform } from 'react-native';
+import * as SecureStore from 'expo-secure-store';
 import { getThemePalette, type ThemeMode, type ThemePalette } from './tokens';
 
-const THEME_META_KEY = 'ui_theme_mode';
+const THEME_STORAGE_KEY = 'organiza_ui_theme_mode';
 
 export interface ThemeContextValue {
   mode: ThemeMode;
@@ -22,14 +23,34 @@ const ThemeContext = createContext<ThemeContextValue>({
 
 function readPersistedThemeMode(): ThemeMode {
   try {
-    const stored = localStore.getSyncMeta(THEME_META_KEY);
+    const stored =
+      Platform.OS === 'web'
+        ? typeof window !== 'undefined' && window.localStorage
+          ? window.localStorage.getItem(THEME_STORAGE_KEY)
+          : null
+        : SecureStore.getItem(THEME_STORAGE_KEY);
+
     if (stored === 'light' || stored === 'dark') {
       return stored;
     }
   } catch {
-    // Fallback al modo por defecto si la DB local no está inicializada todavía
+    // Fallback al modo por defecto si falla la lectura
   }
   return 'dark';
+}
+
+function writePersistedThemeMode(nextMode: ThemeMode): void {
+  try {
+    if (Platform.OS === 'web') {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        window.localStorage.setItem(THEME_STORAGE_KEY, nextMode);
+      }
+      return;
+    }
+    SecureStore.setItem(THEME_STORAGE_KEY, nextMode);
+  } catch {
+    // Ignorar si falla la persistencia visual
+  }
 }
 
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -37,21 +58,13 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const setMode = useCallback((nextMode: ThemeMode) => {
     setModeState(nextMode);
-    try {
-      localStore.setSyncMeta(THEME_META_KEY, nextMode);
-    } catch {
-      // Ignorar si falla persistencia
-    }
+    writePersistedThemeMode(nextMode);
   }, []);
 
   const toggleTheme = useCallback(() => {
     setModeState((prev) => {
       const next: ThemeMode = prev === 'dark' ? 'light' : 'dark';
-      try {
-        localStore.setSyncMeta(THEME_META_KEY, next);
-      } catch {
-        // Ignorar si falla persistencia
-      }
+      writePersistedThemeMode(next);
       return next;
     });
   }, []);

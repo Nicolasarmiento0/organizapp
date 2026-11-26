@@ -238,7 +238,7 @@ export async function pickAndCompressImage(
 
 /**
  * Sube una imagen ya comprimida (~80 KB WebP) al Worker de Cloudflare R2 (`POST /api/media/upload`).
- * Si el usuario está Offline o en modo Invitado sin sesión, conserva la copia local (`dataUrl`).
+ * Si el bucket R2 no está configurado o falla la subida, conserva el dataUrl para sincronizarlo dentro de la nota.
  */
 export async function uploadCompressedImageToR2(
   payload: Pick<CompressedImagePayload, 'dataUrl' | 'base64' | 'contentType' | 'sizeBytes'>

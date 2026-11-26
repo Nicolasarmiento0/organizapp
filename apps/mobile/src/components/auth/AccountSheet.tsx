@@ -10,8 +10,6 @@ import {
 import { useRouter } from 'expo-router';
 import {
   Cloud,
-  Database,
-  LogIn,
   LogOut,
   Moon,
   RefreshCw,
@@ -27,6 +25,7 @@ import {
   signOutAndReset,
 } from '../../services/authClient';
 import {
+  resetCloudSyncState,
   subscribeSyncStatus,
   syncWithCloudflareD1,
   type SyncStatusSnapshot,
@@ -72,6 +71,7 @@ export const AccountSheet: React.FC<{
     lastSyncedAt: 0,
     dirtyCount: 0,
     lastError: null,
+    isHydrated: false,
   });
 
   useEffect(() => {
@@ -82,17 +82,13 @@ export const AccountSheet: React.FC<{
   const initials = getUserInitials(user?.name, user?.email);
 
   const handleSyncNow = async () => {
-    await syncWithCloudflareD1();
-  };
-
-  const handleGoToLogin = () => {
-    onClose();
-    router.push('/(auth)/login');
+    await syncWithCloudflareD1({ forceFullPull: true });
   };
 
   const handleSignOut = async () => {
     setIsSigningOut(true);
     await signOutAndReset();
+    resetCloudSyncState();
     setIsSigningOut(false);
     onClose();
     router.replace('/(auth)/login');
@@ -214,12 +210,26 @@ export const AccountSheet: React.FC<{
                   <Text style={[styles.infoTitle, { color: theme.textPrimary }]}>
                     {syncState.status === 'syncing'
                       ? 'Sincronizando cambios...'
-                      : formatLastSyncLabel(syncState.lastSyncedAt)}
+                      : syncState.status === 'error'
+                        ? 'Error de sincronización'
+                        : formatLastSyncLabel(syncState.lastSyncedAt)}
                   </Text>
-                  <Text style={[styles.infoSub, { color: theme.textSecondary }]}>
-                    {syncState.dirtyCount > 0
-                      ? `${syncState.dirtyCount} cambios locales pendientes`
-                      : 'Todo respaldado en Cloudflare D1'}
+                  <Text
+                    style={[
+                      styles.infoSub,
+                      {
+                        color:
+                          syncState.status === 'error' && syncState.lastError
+                            ? theme.danger
+                            : theme.textSecondary,
+                      },
+                    ]}
+                  >
+                    {syncState.status === 'error' && syncState.lastError
+                      ? syncState.lastError
+                      : syncState.dirtyCount > 0
+                        ? `${syncState.dirtyCount} cambios pendientes de subir`
+                        : 'Todo sincronizado en Cloudflare D1'}
                   </Text>
                 </View>
                 <Pressable
@@ -243,56 +253,7 @@ export const AccountSheet: React.FC<{
                 </Pressable>
               </View>
             </>
-          ) : (
-            <View
-              style={[
-                styles.localModeBox,
-                {
-                  backgroundColor: theme.cardElevated,
-                  borderColor: theme.glassBorder,
-                },
-              ]}
-            >
-              <View style={styles.localModeHeader}>
-                <View
-                  style={[
-                    styles.localBadgeIcon,
-                    { backgroundColor: theme.pillBg },
-                  ]}
-                >
-                  <Database size={18} color={theme.textPrimary} strokeWidth={1.8} />
-                </View>
-                <View style={styles.localTextCol}>
-                  <Text style={[styles.profileName, { color: theme.textPrimary }]}>
-                    Modo Local (Sin cuenta)
-                  </Text>
-                  <Text style={[styles.infoSub, { color: theme.textSecondary }]}>
-                    Tus datos viven en SQLite local (0 ms). Inicia sesión para
-                    sincronizar entre dispositivos.
-                  </Text>
-                </View>
-              </View>
-
-              <Pressable
-                onPress={handleGoToLogin}
-                style={({ pressed }) => [
-                  styles.primaryBtn,
-                  { backgroundColor: theme.accentPrimary },
-                  pressed && { opacity: 0.88 },
-                ]}
-              >
-                <LogIn size={16} color={theme.accentPrimaryText} strokeWidth={2.1} />
-                <Text
-                  style={[
-                    styles.primaryBtnText,
-                    { color: theme.accentPrimaryText },
-                  ]}
-                >
-                  Iniciar sesión / Crear cuenta
-                </Text>
-              </Pressable>
-            </View>
-          )}
+          ) : null}
 
           {/* Toggle rápido de tema */}
           <Pressable
@@ -472,40 +433,6 @@ const styles = StyleSheet.create({
   syncBtnText: {
     fontSize: 12,
     fontWeight: '600',
-  },
-  localModeBox: {
-    borderWidth: 1,
-    borderRadius: radii.md,
-    padding: spacing.md,
-    gap: spacing.md,
-  },
-  localModeHeader: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: spacing.md,
-  },
-  localBadgeIcon: {
-    width: 38,
-    height: 38,
-    borderRadius: radii.squircle,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  localTextCol: {
-    flex: 1,
-    gap: 3,
-  },
-  primaryBtn: {
-    borderRadius: radii.md,
-    height: 44,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.sm,
-  },
-  primaryBtnText: {
-    fontSize: 14,
-    fontWeight: '700',
   },
   themeToggleRow: {
     flexDirection: 'row',

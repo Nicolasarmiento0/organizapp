@@ -3,6 +3,7 @@ import type { NotePageRecord, TaskRecord } from '@organiza/shared/schema';
 import {
   createLocalId,
   localStore,
+  nextMonotonicTimestamp,
   notifyDatabaseChanged,
   subscribeDatabaseChanges,
 } from '../../db/client';
@@ -48,10 +49,10 @@ export interface UpdateNotePageInput {
 }
 
 export function insertNotePageOfflineFirst(input: CreateNotePageInput): NotePageRecord {
-  const now = Date.now();
+  const now = nextMonotonicTimestamp();
   const record: NotePageRecord = {
     id: createLocalId(),
-    userId: input.userId || 'local-user',
+    userId: input.userId || localStore.getActiveUserId(),
     parentId: input.parentId ?? null,
     title: input.title.trim() || 'Página sin título',
     icon: input.icon ?? 'FileText',
@@ -77,7 +78,7 @@ export function insertNotePageOfflineFirst(input: CreateNotePageInput): NotePage
  * Hook Offline-First para Workspace estilo Notion + Obsidian
  * (Subpáginas infinitas, FTS5/Spotlight, Editor por Bloques, Nota->Hoy y Plantillas).
  */
-export function useNotesWorkspace(userId = 'local-user') {
+export function useNotesWorkspace(userId = '') {
   const [pages, setPages] = useState<NotePageRecord[]>(() => localStore.getNotePages());
   const [deletedPages, setDeletedPages] = useState<NotePageRecord[]>(() =>
     localStore.getDeletedNotePages()
@@ -190,9 +191,10 @@ export function useNotesWorkspace(userId = 'local-user') {
   );
 
   const updatePage = useCallback((pageId: string, input: UpdateNotePageInput) => {
+    const existing = localStore.getNotePageById(pageId);
     const patch: Partial<NotePageRecord> = {
       isDirty: true,
-      updatedAt: Date.now(),
+      updatedAt: nextMonotonicTimestamp(existing?.updatedAt),
     };
     if (input.title !== undefined) {
       patch.title = input.title.trim() || 'Página sin título';
@@ -272,7 +274,7 @@ export function useNotesWorkspace(userId = 'local-user') {
     localStore.updateNotePage(pageId, {
       isPinned: !current.isPinned,
       isDirty: true,
-      updatedAt: Date.now(),
+      updatedAt: nextMonotonicTimestamp(current.updatedAt),
     });
     notifyDatabaseChanged();
     triggerBackgroundSync();
@@ -316,10 +318,11 @@ export function useNotesWorkspace(userId = 'local-user') {
         return false;
       }
     }
+    const current = localStore.getNotePageById(pageId);
     localStore.updateNotePage(pageId, {
       parentId: newParentId,
       isDirty: true,
-      updatedAt: Date.now(),
+      updatedAt: nextMonotonicTimestamp(current?.updatedAt),
     });
     notifyDatabaseChanged();
     triggerBackgroundSync();
@@ -331,9 +334,10 @@ export function useNotesWorkspace(userId = 'local-user') {
       const allActive = localStore.getNotePages();
       const target = allActive.find((p) => p.id === pageId);
       const subtreeIds = getDescendantIds(allActive, pageId);
-      const now = Date.now();
 
       for (const id of subtreeIds) {
+        const page = localStore.getNotePageById(id);
+        const now = nextMonotonicTimestamp(page?.updatedAt);
         localStore.updateNotePage(id, {
           deletedAt: now,
           isPinned: false,
@@ -370,7 +374,7 @@ export function useNotesWorkspace(userId = 'local-user') {
       deletedAt: null,
       parentId: restoredParentId,
       isDirty: true,
-      updatedAt: Date.now(),
+      updatedAt: nextMonotonicTimestamp(target.updatedAt),
     });
     setActivePageId(pageId);
     notifyDatabaseChanged();
