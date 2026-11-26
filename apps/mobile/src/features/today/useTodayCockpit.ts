@@ -5,6 +5,8 @@ import type {
   TaskCategory,
   TaskPriority,
   HabitFrequency,
+  HabitType,
+  HabitTimeOfDay,
 } from '@organiza/shared/schema';
 import {
   localStore,
@@ -36,7 +38,13 @@ export interface CreateTaskInput {
 export interface CreateHabitInput {
   title: string;
   icon?: string;
+  habitType?: HabitType;
+  unit?: string | null;
   frequency?: HabitFrequency;
+  scheduledDays?: number[];
+  targetPerDay?: number;
+  weeklyGoal?: number | null;
+  timeOfDay?: HabitTimeOfDay;
   reminderTime?: string | null;
   userId?: string;
 }
@@ -134,14 +142,31 @@ export function insertTaskOfflineFirst(input: CreateTaskInput): TaskRecord {
 
 export function insertHabitOfflineFirst(input: CreateHabitInput): HabitRecord {
   const now = Date.now();
+  const freq = input.frequency ?? 'daily';
+  const defaultDays =
+    freq === 'weekdays'
+      ? [1, 2, 3, 4, 5]
+      : freq === 'weekends'
+        ? [0, 6]
+        : [0, 1, 2, 3, 4, 5, 6];
+  const scheduledDaysJson = JSON.stringify(input.scheduledDays ?? defaultDays);
+
   const record: HabitRecord = {
     id: createLocalId(),
     userId: input.userId || 'local-user',
     title: input.title.trim(),
     icon: input.icon ?? 'Sparkles',
-    frequency: input.frequency ?? 'daily',
-    targetPerDay: 1,
+    habitType: input.habitType ?? 'binary',
+    unit: input.unit ?? null,
+    frequency: freq,
+    scheduledDays: scheduledDaysJson,
+    targetPerDay: Math.max(1, input.targetPerDay ?? 1),
+    weeklyGoal: input.weeklyGoal ?? null,
     streak: 0,
+    bestStreak: 0,
+    isPaused: false,
+    pausedUntil: null,
+    timeOfDay: input.timeOfDay ?? 'any',
     reminderTime: input.reminderTime ?? null,
     isArchived: false,
     isDirty: true,
@@ -253,8 +278,9 @@ export function useTodayCockpit(userId = 'local-user') {
         habitId,
         userId: habit.userId || userId,
         dateKey: currentDayKey,
-        completedCount: willComplete ? 1 : 0,
+        completedCount: willComplete ? habit.targetPerDay : 0,
         isCompleted: willComplete,
+        status: willComplete ? 'completed' : 'partial',
         isDirty: true,
         deletedAt: willComplete ? null : now,
         updatedAt: now,
@@ -266,6 +292,7 @@ export function useTodayCockpit(userId = 'local-user') {
 
       localStore.updateHabit(habitId, {
         streak: updatedStreak,
+        bestStreak: Math.max(habit.bestStreak ?? 0, updatedStreak),
         isDirty: true,
         updatedAt: now,
       });

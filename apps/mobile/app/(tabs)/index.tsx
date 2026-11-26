@@ -13,7 +13,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   ArrowRight,
   ArrowUpRight,
-  Award,
   Bell,
   Calendar,
   Check,
@@ -28,9 +27,10 @@ import {
   RefreshCw,
   Search,
   Sun,
+  Trophy,
   User,
   X,
-} from 'lucide-react-native';
+} from '../../src/components/icons';
 import { iconMetrics, radii, spacing, type MacModuleType } from '../../src/theme/tokens';
 import { useTheme } from '../../src/theme/ThemeContext';
 import { LiquidGlassCard } from '../../src/components/glass/LiquidGlassCard';
@@ -42,6 +42,10 @@ import {
   ProgressRing,
   useDashboardData,
 } from '../../src/features/dashboard';
+import {
+  BinaryHabitDayPickerModal,
+  resolveBadgeIcon,
+} from '../../src/features/habits';
 import {
   subscribeSyncStatus,
   syncWithCloudflareD1,
@@ -125,14 +129,22 @@ export default function DashboardBentoScreen() {
     blocksForSelectedDate,
     tasks,
     habits,
+    allEnrichedHabits,
+    badgesSummary,
     notes,
     telemetry,
-    toggleHabitForToday,
+    handleQuickHabitTap,
+    toggleBinaryHabitForDate,
     toggleTask,
   } = useDashboardData(activeUserId);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [activityFilter, setActivityFilter] = useState<ActivityFilter>('all');
+  const [dayPickerHabitId, setDayPickerHabitId] = useState<string | null>(null);
+  const dayPickerHabit = useMemo(
+    () => allEnrichedHabits.find((h) => h.id === dayPickerHabitId) ?? null,
+    [allEnrichedHabits, dayPickerHabitId]
+  );
   const [syncState, setSyncState] = useState<SyncStatusSnapshot>({
     status: 'idle',
     lastSyncedAt: 0,
@@ -222,7 +234,7 @@ export default function DashboardBentoScreen() {
     {
       key: 'habits',
       title: 'Hábitos',
-      subtitle: 'Checklist + Premios',
+      subtitle: 'Checklist + Insignias',
       stat: `${telemetry.completedHabits}/${telemetry.totalHabits} hoy`,
       icon: CheckSquare,
       route: '/(tabs)/habits',
@@ -339,13 +351,13 @@ export default function DashboardBentoScreen() {
                 <View
                   style={[
                     styles.miniAvatar,
-                    { backgroundColor: theme.accentVolt },
+                    { backgroundColor: theme.accentPrimary },
                   ]}
                 >
                   <Text
                     style={[
                       styles.miniAvatarText,
-                      { color: theme.accentVoltText },
+                      { color: theme.accentPrimaryText },
                     ]}
                   >
                     {userInitials}
@@ -405,7 +417,7 @@ export default function DashboardBentoScreen() {
                 Resultados para “{searchQuery.trim()}” ({totalSearchHits})
               </Text>
               <Pressable onPress={() => setSearchQuery('')}>
-                <Text style={[styles.clearSearchText, { color: theme.accentCobaltBright }]}>
+                <Text style={[styles.clearSearchText, { color: theme.accentPrimaryLink }]}>
                   Cerrar
                 </Text>
               </Pressable>
@@ -435,7 +447,13 @@ export default function DashboardBentoScreen() {
                 {searchResults.habits.map((h) => (
                   <Pressable
                     key={h.id}
-                    onPress={() => toggleHabitForToday(h.id)}
+                    onPress={() => {
+                      if (h.habitType === 'quantitative') {
+                        handleQuickHabitTap(h.id);
+                      } else {
+                        setDayPickerHabitId(h.id);
+                      }
+                    }}
                     style={[styles.searchHitRow, { borderColor: theme.divider }]}
                   >
                     <Flame size={14} color={theme.textSecondary} strokeWidth={2} />
@@ -443,7 +461,7 @@ export default function DashboardBentoScreen() {
                       {h.title}
                     </Text>
                     <Text style={[styles.searchHitTag, { color: theme.textSecondary }]}>
-                      {h.streak}d racha
+                      {h.computedStreak}d racha
                     </Text>
                   </Pressable>
                 ))}
@@ -544,7 +562,7 @@ export default function DashboardBentoScreen() {
                 <View
                   style={[
                     styles.kpiAccentBar,
-                    { backgroundColor: theme.accentCobaltBright },
+                    { backgroundColor: theme.accentPrimary },
                   ]}
                 />
                 <Text style={[styles.kpiLabel, { color: theme.textSecondary }]}>
@@ -570,7 +588,7 @@ export default function DashboardBentoScreen() {
                 <View
                   style={[
                     styles.kpiAccentBar,
-                    { backgroundColor: theme.textMuted },
+                    { backgroundColor: theme.accentPrimaryBorder },
                   ]}
                 />
                 <Text style={[styles.kpiLabel, { color: theme.textSecondary }]}>
@@ -596,7 +614,7 @@ export default function DashboardBentoScreen() {
                 <View
                   style={[
                     styles.kpiAccentBar,
-                    { backgroundColor: theme.accentVolt },
+                    { backgroundColor: theme.textPrimary },
                   ]}
                 />
                 <Text style={[styles.kpiLabel, { color: theme.textSecondary }]}>
@@ -606,7 +624,7 @@ export default function DashboardBentoScreen() {
                   {telemetry.completedHabits}/{telemetry.totalHabits}
                 </Text>
                 <Text style={[styles.kpiMeta, { color: theme.textSecondary }]}>
-                  {telemetry.rewardPoints} pts acumulados
+                  {telemetry.unlockedBadges}/{telemetry.totalBadges} insignias
                 </Text>
               </View>
             </View>
@@ -714,27 +732,35 @@ export default function DashboardBentoScreen() {
                   onPress={() => router.push('/(tabs)/habits')}
                   style={styles.inlineLink}
                 >
-                  <Text style={[styles.inlineLinkText, { color: theme.accentCobaltBright }]}>
+                  <Text style={[styles.inlineLinkText, { color: theme.accentPrimaryLink }]}>
                     Ver todo
                   </Text>
-                  <ArrowRight size={13} color={theme.accentCobaltBright} strokeWidth={2} />
+                  <ArrowRight size={13} color={theme.accentPrimaryLink} strokeWidth={2} />
                 </Pressable>
               </View>
 
               <View style={styles.habitsSplitRow}>
                 <View style={styles.habitsChecklistCol}>
                   {habits.slice(0, 4).map((habit) => {
-                    const done = habit.completedToday;
+                    const done = habit.completedOnActiveDate;
+                    const isQuant = habit.habitType === 'quantitative';
+                    const target = Math.max(1, habit.targetPerDay);
                     return (
                       <Pressable
                         key={habit.id}
-                        onPress={() => toggleHabitForToday(habit.id)}
+                        onPress={() => {
+                          if (isQuant) {
+                            handleQuickHabitTap(habit.id);
+                          } else {
+                            setDayPickerHabitId(habit.id);
+                          }
+                        }}
                         style={[
                           styles.habitMiniRow,
                           {
                             backgroundColor: theme.cardElevated,
                             borderColor: done
-                              ? theme.glassBorderStrong
+                              ? theme.accentPrimaryBorder
                               : theme.glassBorder,
                           },
                         ]}
@@ -744,10 +770,10 @@ export default function DashboardBentoScreen() {
                             styles.habitCheckBox,
                             {
                               borderColor: done
-                                ? theme.accentVolt
+                                ? theme.accentPrimary
                                 : theme.textSecondary,
                               backgroundColor: done
-                                ? theme.accentVolt
+                                ? theme.accentPrimary
                                 : 'transparent',
                             },
                           ]}
@@ -755,8 +781,14 @@ export default function DashboardBentoScreen() {
                           {done ? (
                             <Check
                               size={12}
-                              color={theme.accentVoltText}
+                              color={theme.accentPrimaryText}
                               strokeWidth={2.7}
+                            />
+                          ) : isQuant ? (
+                            <Plus
+                              size={11}
+                              color={theme.accentPrimaryLink}
+                              strokeWidth={2.5}
                             />
                           ) : null}
                         </View>
@@ -764,17 +796,22 @@ export default function DashboardBentoScreen() {
                           style={[
                             styles.habitMiniTitle,
                             { color: theme.textPrimary },
-                            done && {
-                              textDecorationLine: 'line-through',
-                              color: theme.textMuted,
-                            },
+                            done &&
+                              !isQuant && {
+                                textDecorationLine: 'line-through',
+                                color: theme.textMuted,
+                              },
                           ]}
                           numberOfLines={1}
                         >
                           {habit.title}
                         </Text>
-                        <Text style={[styles.habitMiniStreak, { color: theme.textSecondary }]}>
-                          {habit.streak}d
+                        <Text style={[styles.habitMiniStreak, { color: theme.accentPrimaryLink }]}>
+                          {isQuant
+                            ? `${habit.activeCount}/${target}`
+                            : habit.weeklyProgress.weeklyGoal
+                              ? `${habit.weeklyProgress.completedThisWeek}/${habit.weeklyProgress.weeklyGoal} sem`
+                              : `${habit.computedStreak}d`}
                         </Text>
                       </Pressable>
                     );
@@ -792,44 +829,101 @@ export default function DashboardBentoScreen() {
               </View>
             </LiquidGlassCard>
 
-            {/* Premio por Cumplimiento */}
+            {/* Insignias de Cumplimiento */}
             <LiquidGlassCard style={styles.bentoCard} contentStyle={styles.bentoCardContent}>
-              <View style={styles.cardHeaderRow}>
-                <View style={styles.cardTitleWithBadge}>
-                  <Award size={18} color={theme.textPrimary} strokeWidth={2} />
-                  <Text style={[styles.cardTitle, { color: theme.textPrimary }]}>
-                    Próximo Premio
-                  </Text>
-                </View>
-                <Text style={[styles.rewardPercentText, { color: theme.textPrimary }]}>
-                  {telemetry.rewardProgressPercent}% completado
-                </Text>
-              </View>
+              {(() => {
+                const nextBadge = telemetry.nextBadge;
+                const NextBadgeIcon = nextBadge
+                  ? resolveBadgeIcon(nextBadge.icon)
+                  : Trophy;
+                const progressPct = nextBadge ? nextBadge.progressPercent : 100;
 
-              <Text style={[styles.rewardMetaTitle, { color: theme.textSecondary }]}>
-                Meta: {telemetry.nextRewardTitle}
-              </Text>
+                return (
+                  <>
+                    <View style={styles.cardHeaderRow}>
+                      <View style={styles.cardTitleWithBadge}>
+                        <NextBadgeIcon
+                          size={18}
+                          color={theme.accentPrimaryLink}
+                          strokeWidth={2}
+                        />
+                        <Text style={[styles.cardTitle, { color: theme.textPrimary }]}>
+                          {nextBadge ? 'Próxima Insignia' : 'Insignias'}
+                        </Text>
+                      </View>
+                      <Pressable
+                        onPress={() => router.push('/(tabs)/habits')}
+                        style={styles.inlineLink}
+                      >
+                        <Text style={[styles.inlineLinkText, { color: theme.accentPrimaryLink }]}>
+                          Ver todas
+                        </Text>
+                        <ArrowRight size={13} color={theme.accentPrimaryLink} strokeWidth={2} />
+                      </Pressable>
+                    </View>
 
-              <View style={[styles.linearTrack, { backgroundColor: theme.pillBg }]}>
-                <View
-                  style={[
-                    styles.linearFill,
-                    {
-                      width: `${Math.max(6, telemetry.rewardProgressPercent)}%`,
-                      backgroundColor: theme.accentVolt,
-                    },
-                  ]}
-                />
-              </View>
+                    <Text style={[styles.rewardMetaTitle, { color: theme.textSecondary }]}>
+                      {nextBadge
+                        ? `${nextBadge.title} · ${nextBadge.description}`
+                        : '¡Completaste todas las insignias disponibles!'}
+                    </Text>
 
-              <View style={styles.rewardBoundsRow}>
-                <Text style={[styles.rewardBoundText, { color: theme.textMuted }]}>
-                  {telemetry.rewardPoints} pts actuales
-                </Text>
-                <Text style={[styles.rewardBoundText, { color: theme.textPrimary }]}>
-                  {telemetry.nextRewardTarget} pts
-                </Text>
-              </View>
+                    <View style={[styles.linearTrack, { backgroundColor: theme.pillBg }]}>
+                      <View
+                        style={[
+                          styles.linearFill,
+                          {
+                            width: `${Math.max(6, progressPct)}%`,
+                            backgroundColor: theme.accentPrimary,
+                          },
+                        ]}
+                      />
+                    </View>
+
+                    <View style={styles.rewardBoundsRow}>
+                      <Text style={[styles.rewardBoundText, { color: theme.textMuted }]}>
+                        {nextBadge ? nextBadge.progressLabel : '100% completado'}
+                      </Text>
+                      <Text style={[styles.rewardBoundText, { color: theme.textPrimary }]}>
+                        {telemetry.unlockedBadges}/{telemetry.totalBadges} logradas
+                      </Text>
+                    </View>
+
+                    {/* Mini medallones */}
+                    <View style={styles.miniBadgesRow}>
+                      {badgesSummary.badges.slice(0, 6).map((b) => {
+                        const BIcon = resolveBadgeIcon(b.icon);
+                        return (
+                          <Pressable
+                            key={b.id}
+                            onPress={() => router.push('/(tabs)/habits')}
+                            style={[
+                              styles.miniMedallion,
+                              {
+                                backgroundColor: b.unlocked
+                                  ? theme.accentPrimarySoft
+                                  : theme.pillBg,
+                                borderColor: b.unlocked
+                                  ? theme.accentPrimaryBorder
+                                  : theme.glassBorder,
+                              },
+                            ]}
+                            accessibilityLabel={b.title}
+                          >
+                            <BIcon
+                              size={14}
+                              color={
+                                b.unlocked ? theme.accentPrimaryLink : theme.textMuted
+                              }
+                              strokeWidth={2}
+                            />
+                          </Pressable>
+                        );
+                      })}
+                    </View>
+                  </>
+                );
+              })()}
             </LiquidGlassCard>
           </View>
 
@@ -865,10 +959,10 @@ export default function DashboardBentoScreen() {
                           styles.segmentPill,
                           {
                             backgroundColor: active
-                              ? theme.accentVolt
+                              ? theme.accentPrimary
                               : theme.pillBg,
                             borderColor: active
-                              ? theme.accentVolt
+                              ? theme.accentPrimary
                               : theme.glassBorder,
                           },
                         ]}
@@ -878,7 +972,7 @@ export default function DashboardBentoScreen() {
                             styles.segmentPillText,
                             {
                               color: active
-                                ? theme.accentVoltText
+                                ? theme.accentPrimaryText
                                 : theme.textSecondary,
                             },
                             active && { fontWeight: '700' },
@@ -906,7 +1000,7 @@ export default function DashboardBentoScreen() {
                             {
                               backgroundColor: theme.cardElevated,
                               borderColor: isPrimary
-                                ? theme.glassBorderStrong
+                                ? theme.accentPrimaryBorder
                                 : theme.glassBorder,
                               width: isTabletOrWide ? '48.6%' : '100%',
                             },
@@ -919,7 +1013,7 @@ export default function DashboardBentoScreen() {
                                 styles.activityBadge,
                                 {
                                   backgroundColor: isPrimary
-                                    ? theme.accentCobaltSoft
+                                    ? theme.accentPrimarySoft
                                     : theme.pillBg,
                                 },
                               ]}
@@ -928,7 +1022,7 @@ export default function DashboardBentoScreen() {
                                 size={12}
                                 color={
                                   isPrimary
-                                    ? theme.accentCobaltBright
+                                    ? theme.accentPrimaryLink
                                     : theme.textSecondary
                                 }
                                 strokeWidth={2}
@@ -938,7 +1032,7 @@ export default function DashboardBentoScreen() {
                                   styles.activityBadgeText,
                                   {
                                     color: isPrimary
-                                      ? theme.accentCobaltBright
+                                      ? theme.accentPrimaryLink
                                       : theme.textSecondary,
                                   },
                                 ]}
@@ -1150,10 +1244,10 @@ export default function DashboardBentoScreen() {
                     onPress={() => router.push('/(tabs)/notes')}
                     style={styles.inlineLink}
                   >
-                    <Text style={[styles.inlineLinkText, { color: theme.accentCobaltBright }]}>
+                    <Text style={[styles.inlineLinkText, { color: theme.accentPrimaryLink }]}>
                       Abrir
                     </Text>
-                    <ArrowRight size={13} color={theme.accentCobaltBright} strokeWidth={2} />
+                    <ArrowRight size={13} color={theme.accentPrimaryLink} strokeWidth={2} />
                   </Pressable>
                 </View>
               </View>
@@ -1219,6 +1313,14 @@ export default function DashboardBentoScreen() {
           </View>
         </View>
       </ScrollView>
+
+      <BinaryHabitDayPickerModal
+        visible={Boolean(dayPickerHabit)}
+        habit={dayPickerHabit}
+        todayKey={todayKey}
+        onClose={() => setDayPickerHabitId(null)}
+        onToggleDate={toggleBinaryHabitForDate}
+      />
     </SafeAreaView>
   );
 }
@@ -1567,6 +1669,21 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '600',
     fontVariant: ['tabular-nums'],
+  },
+  miniBadgesRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingTop: 2,
+  },
+  miniMedallion: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    borderCurve: 'continuous',
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   filterPillsGroup: {
     flexDirection: 'row',

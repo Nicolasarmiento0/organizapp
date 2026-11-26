@@ -17,7 +17,7 @@ import {
   RefreshCw,
   Sun,
   X,
-} from 'lucide-react-native';
+} from '../icons';
 import { iconMetrics, radii, shadows, spacing } from '../../theme/tokens';
 import { useTheme } from '../../theme/ThemeContext';
 import { LiquidGlassCard } from '../glass/LiquidGlassCard';
@@ -156,13 +156,13 @@ export const AccountSheet: React.FC<{
                 <View
                   style={[
                     styles.avatarCircle,
-                    { backgroundColor: theme.accentVolt },
+                    { backgroundColor: theme.accentPrimary },
                   ]}
                 >
                   <Text
                     style={[
                       styles.avatarInitials,
-                      { color: theme.accentVoltText },
+                      { color: theme.accentPrimaryText },
                     ]}
                   >
                     {initials}
@@ -277,15 +277,15 @@ export const AccountSheet: React.FC<{
                 onPress={handleGoToLogin}
                 style={({ pressed }) => [
                   styles.primaryBtn,
-                  { backgroundColor: theme.accentVolt },
+                  { backgroundColor: theme.accentPrimary },
                   pressed && { opacity: 0.88 },
                 ]}
               >
-                <LogIn size={16} color={theme.accentVoltText} strokeWidth={2.1} />
+                <LogIn size={16} color={theme.accentPrimaryText} strokeWidth={2.1} />
                 <Text
                   style={[
                     styles.primaryBtnText,
-                    { color: theme.accentVoltText },
+                    { color: theme.accentPrimaryText },
                   ]}
                 >
                   Iniciar sesión / Crear cuenta

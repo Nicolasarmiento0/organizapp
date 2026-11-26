@@ -6,6 +6,7 @@ import {
   tasks,
   habits,
   habitLogs,
+  habitRewards,
   workBlocks,
   notePages,
   type SyncPushRequest,
@@ -215,6 +216,32 @@ app.post('/api/sync', async (c) => {
       }
     }
 
+    // 3b. Upsert Premios de Hábitos (Habit Rewards)
+    for (const item of incoming.habitRewards ?? []) {
+      const existing = await db
+        .select({ updatedAt: habitRewards.updatedAt })
+        .from(habitRewards)
+        .where(and(eq(habitRewards.id, item.id), eq(habitRewards.userId, user.id)))
+        .get();
+
+      if (!existing || item.updatedAt >= existing.updatedAt) {
+        const sanitized = {
+          ...item,
+          userId: user.id,
+          isDirty: false,
+          updatedAt: item.updatedAt || serverTimestamp,
+        };
+        await db
+          .insert(habitRewards)
+          .values(sanitized)
+          .onConflictDoUpdate({
+            target: habitRewards.id,
+            set: sanitized,
+          });
+        acceptedCount += 1;
+      }
+    }
+
     // 4. Upsert Bloques de Horario / Time-Blocking (Fase 2)
     for (const item of incoming.workBlocks ?? []) {
       const existing = await db
@@ -272,6 +299,7 @@ app.post('/api/sync', async (c) => {
       deltaTasks,
       deltaHabits,
       deltaHabitLogs,
+      deltaHabitRewards,
       deltaWorkBlocks,
       deltaNotePages,
     ] = await Promise.all([
@@ -289,6 +317,11 @@ app.post('/api/sync', async (c) => {
         .select()
         .from(habitLogs)
         .where(and(eq(habitLogs.userId, user.id), gt(habitLogs.updatedAt, lastSyncedAt)))
+        .all(),
+      db
+        .select()
+        .from(habitRewards)
+        .where(and(eq(habitRewards.userId, user.id), gt(habitRewards.updatedAt, lastSyncedAt)))
         .all(),
       db
         .select()
@@ -310,6 +343,7 @@ app.post('/api/sync', async (c) => {
         deltaTasks.length +
         deltaHabits.length +
         deltaHabitLogs.length +
+        deltaHabitRewards.length +
         deltaWorkBlocks.length +
         deltaNotePages.length,
     });
@@ -322,6 +356,7 @@ app.post('/api/sync', async (c) => {
         tasks: deltaTasks,
         habits: deltaHabits,
         habitLogs: deltaHabitLogs,
+        habitRewards: deltaHabitRewards,
         workBlocks: deltaWorkBlocks,
         notePages: deltaNotePages,
       },
@@ -346,34 +381,45 @@ app.get('/api/sync/pull', async (c) => {
   const sinceParam = Number(c.req.query('since') ?? '0');
   const since = Number.isFinite(sinceParam) ? Math.max(0, sinceParam) : 0;
 
-  const [deltaTasks, deltaHabits, deltaHabitLogs, deltaWorkBlocks, deltaNotePages] =
-    await Promise.all([
-      db
-        .select()
-        .from(tasks)
-        .where(and(eq(tasks.userId, user.id), gt(tasks.updatedAt, since)))
-        .all(),
-      db
-        .select()
-        .from(habits)
-        .where(and(eq(habits.userId, user.id), gt(habits.updatedAt, since)))
-        .all(),
-      db
-        .select()
-        .from(habitLogs)
-        .where(and(eq(habitLogs.userId, user.id), gt(habitLogs.updatedAt, since)))
-        .all(),
-      db
-        .select()
-        .from(workBlocks)
-        .where(and(eq(workBlocks.userId, user.id), gt(workBlocks.updatedAt, since)))
-        .all(),
-      db
-        .select()
-        .from(notePages)
-        .where(and(eq(notePages.userId, user.id), gt(notePages.updatedAt, since)))
-        .all(),
-    ]);
+  const [
+    deltaTasks,
+    deltaHabits,
+    deltaHabitLogs,
+    deltaHabitRewards,
+    deltaWorkBlocks,
+    deltaNotePages,
+  ] = await Promise.all([
+    db
+      .select()
+      .from(tasks)
+      .where(and(eq(tasks.userId, user.id), gt(tasks.updatedAt, since)))
+      .all(),
+    db
+      .select()
+      .from(habits)
+      .where(and(eq(habits.userId, user.id), gt(habits.updatedAt, since)))
+      .all(),
+    db
+      .select()
+      .from(habitLogs)
+      .where(and(eq(habitLogs.userId, user.id), gt(habitLogs.updatedAt, since)))
+      .all(),
+    db
+      .select()
+      .from(habitRewards)
+      .where(and(eq(habitRewards.userId, user.id), gt(habitRewards.updatedAt, since)))
+      .all(),
+    db
+      .select()
+      .from(workBlocks)
+      .where(and(eq(workBlocks.userId, user.id), gt(workBlocks.updatedAt, since)))
+      .all(),
+    db
+      .select()
+      .from(notePages)
+      .where(and(eq(notePages.userId, user.id), gt(notePages.updatedAt, since)))
+      .all(),
+  ]);
 
   const response: SyncBatchResponse = {
     ok: true,
@@ -383,6 +429,7 @@ app.get('/api/sync/pull', async (c) => {
       tasks: deltaTasks,
       habits: deltaHabits,
       habitLogs: deltaHabitLogs,
+      habitRewards: deltaHabitRewards,
       workBlocks: deltaWorkBlocks,
       notePages: deltaNotePages,
     },

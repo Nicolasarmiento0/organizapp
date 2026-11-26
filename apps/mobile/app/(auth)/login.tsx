@@ -22,7 +22,7 @@ import {
   RefreshCw,
   Sun,
   User,
-} from 'lucide-react-native';
+} from '../../src/components/icons';
 import { iconMetrics, radii, spacing } from '../../src/theme/tokens';
 import { useTheme } from '../../src/theme/ThemeContext';
 import { LiquidGlassCard } from '../../src/components/glass/LiquidGlassCard';
@@ -455,7 +455,7 @@ export default function LoginScreen() {
               disabled={isSubmitting}
               style={({ pressed }) => [
                 styles.primaryButton,
-                { backgroundColor: theme.accentVolt },
+                { backgroundColor: theme.accentPrimary },
                 isSubmitting && { opacity: 0.6 },
                 pressed && styles.buttonPressed,
               ]}
@@ -463,7 +463,7 @@ export default function LoginScreen() {
               <Text
                 style={[
                   styles.primaryButtonText,
-                  { color: theme.accentVoltText },
+                  { color: theme.accentPrimaryText },
                 ]}
               >
                 {isSubmitting
@@ -474,7 +474,7 @@ export default function LoginScreen() {
               </Text>
               <ArrowRight
                 size={16}
-                color={theme.accentVoltText}
+                color={theme.accentPrimaryText}
                 strokeWidth={2.1}
               />
             </Pressable>

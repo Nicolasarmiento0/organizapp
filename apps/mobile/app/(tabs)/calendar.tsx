@@ -15,7 +15,7 @@ import {
   Plus,
   Trash2,
   Zap,
-} from 'lucide-react-native';
+} from '../../src/components/icons';
 import type { WorkBlockType } from '@organiza/shared/schema';
 import { iconMetrics, radii, spacing } from '../../src/theme/tokens';
 import { useTheme } from '../../src/theme/ThemeContext';

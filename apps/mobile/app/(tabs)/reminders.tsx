@@ -15,7 +15,7 @@ import {
   Circle,
   Plus,
   Trash2,
-} from 'lucide-react-native';
+} from '../../src/components/icons';
 import { iconMetrics, radii, spacing } from '../../src/theme/tokens';
 import { useTheme } from '../../src/theme/ThemeContext';
 import { LiquidGlassCard } from '../../src/components/glass/LiquidGlassCard';
@@ -106,13 +106,13 @@ export default function RemindersScreen() {
             style={[
               styles.summaryPill,
               {
-                backgroundColor: remindersPalette.background,
-                borderColor: remindersPalette.border,
+                backgroundColor: theme.accentPrimarySoft,
+                borderColor: theme.accentPrimaryBorder,
               },
             ]}
           >
-            <Bell size={13} color={remindersPalette.icon} strokeWidth={2} />
-            <Text style={[styles.summaryPillText, { color: remindersPalette.icon }]}>
+            <Bell size={13} color={theme.accentPrimaryLink} strokeWidth={2} />
+            <Text style={[styles.summaryPillText, { color: theme.accentPrimaryLink }]}>
               {alertCount} con aviso · {metrics.pendingTasks} pend.
             </Text>
           </View>
@@ -136,17 +136,17 @@ export default function RemindersScreen() {
                 styles.alertTogglePill,
                 {
                   backgroundColor: withAlert30m
-                    ? remindersPalette.background
+                    ? theme.accentPrimarySoft
                     : theme.pillBg,
                   borderColor: withAlert30m
-                    ? remindersPalette.border
+                    ? theme.accentPrimaryBorder
                     : theme.glassBorder,
                 },
               ]}
             >
               <Bell
                 size={12}
-                color={withAlert30m ? remindersPalette.icon : theme.textSecondary}
+                color={withAlert30m ? theme.accentPrimaryLink : theme.textSecondary}
                 strokeWidth={2}
               />
               <Text
@@ -154,7 +154,7 @@ export default function RemindersScreen() {
                   styles.alertToggleText,
                   {
                     color: withAlert30m
-                      ? remindersPalette.icon
+                      ? theme.accentPrimaryLink
                       : theme.textSecondary,
                   },
                 ]}
@@ -166,11 +166,11 @@ export default function RemindersScreen() {
               onPress={handleCreate}
               style={[
                 styles.addBtn,
-                { backgroundColor: theme.accentCobalt },
+                { backgroundColor: theme.accentPrimary },
                 !quickTitle.trim() && { opacity: 0.45 },
               ]}
             >
-              <Plus size={18} color="#FFFFFF" strokeWidth={2.2} />
+              <Plus size={18} color={theme.accentPrimaryText} strokeWidth={2.2} />
             </Pressable>
           </View>
         </LiquidGlassCard>
@@ -193,15 +193,15 @@ export default function RemindersScreen() {
                 style={[
                   styles.filterPill,
                   {
-                    backgroundColor: active ? theme.accentCobalt : theme.card,
-                    borderColor: active ? theme.accentCobalt : theme.glassBorder,
+                    backgroundColor: active ? theme.accentPrimary : theme.card,
+                    borderColor: active ? theme.accentPrimary : theme.glassBorder,
                   },
                 ]}
               >
                 <Text
                   style={[
                     styles.filterText,
-                    { color: active ? '#FFFFFF' : theme.textSecondary },
+                    { color: active ? theme.accentPrimaryText : theme.textSecondary },
                     active && { fontWeight: '700' },
                   ]}
                 >
@@ -247,10 +247,10 @@ export default function RemindersScreen() {
                       <View
                         style={[
                           styles.checkedCircle,
-                          { backgroundColor: theme.accentVolt },
+                          { backgroundColor: theme.accentPrimary },
                         ]}
                       >
-                        <Check size={14} color={theme.accentVoltText} strokeWidth={2.5} />
+                        <Check size={14} color={theme.accentPrimaryText} strokeWidth={2.5} />
                       </View>
                     ) : (
                       <Circle size={22} color={priorityColor} strokeWidth={1.9} />
@@ -296,18 +296,18 @@ export default function RemindersScreen() {
                         <View
                           style={[
                             styles.clockChip,
-                            { backgroundColor: remindersPalette.background },
+                            { backgroundColor: theme.accentPrimarySoft },
                           ]}
                         >
                           <Bell
                             size={11}
-                            color={remindersPalette.icon}
+                            color={theme.accentPrimaryLink}
                             strokeWidth={2}
                           />
                           <Text
                             style={[
                               styles.clockChipText,
-                              { color: remindersPalette.icon },
+                              { color: theme.accentPrimaryLink },
                             ]}
                           >
                             {clock}

@@ -1,8 +1,8 @@
 import { Platform, type ViewStyle } from 'react-native';
 
 /**
- * SISTEMA DE DISEÑO DUAL: "TITANIUM MONOCHROME (DARK + APPLE PRO LIGHT)"
- * Filosofía: Minimalismo arquitectónico estilo Tesla UI / Apple Pro — regla 60-30-10 sin arcoíris.
+ * SISTEMA DE DISEÑO DUAL: "TITANIUM MONOCHROME + CORAL RED (#FA6B6B)"
+ * Filosofía: Minimalismo arquitectónico estilo Tesla UI / Apple Pro con rojo coral hegemónico en Dark & Light.
  */
 
 export type ThemeMode = 'dark' | 'light';
@@ -43,6 +43,12 @@ export interface ThemePalette {
   textSecondary: string;
   textMuted: string;
   textInverse: string;
+
+  accentPrimary: string;
+  accentPrimaryText: string;
+  accentPrimaryLink: string;
+  accentPrimarySoft: string;
+  accentPrimaryBorder: string;
 
   accentCobalt: string;
   accentCobaltBright: string;
@@ -92,10 +98,16 @@ export const darkTheme: ThemePalette = {
   textMuted: '#606673',
   textInverse: '#0A0B0D',
 
-  accentCobalt: '#cececeff',
-  accentCobaltBright: '#fa6b6bff',
-  accentCobaltSoft: 'rgba(75, 131, 242, 0.14)',
-  accentCobaltBorder: 'rgba(75, 131, 242, 0.28)',
+  accentPrimary: '#FA6B6B',
+  accentPrimaryText: '#FFFFFF',
+  accentPrimaryLink: '#FA6B6B',
+  accentPrimarySoft: 'rgba(250, 107, 107, 0.14)',
+  accentPrimaryBorder: 'rgba(250, 107, 107, 0.30)',
+
+  accentCobalt: '#FA6B6B',
+  accentCobaltBright: '#FA6B6B',
+  accentCobaltSoft: 'rgba(250, 107, 107, 0.14)',
+  accentCobaltBorder: 'rgba(250, 107, 107, 0.30)',
 
   accentVolt: '#F5F7FA',
   accentVoltText: '#0A0B0D',
@@ -106,8 +118,8 @@ export const darkTheme: ThemePalette = {
   pillBg: 'rgba(255, 255, 255, 0.06)',
   hoverBg: 'rgba(255, 255, 255, 0.10)',
 
-  danger: '#E55353',
-  dangerSoft: 'rgba(229, 83, 83, 0.14)',
+  danger: '#FA6B6B',
+  dangerSoft: 'rgba(250, 107, 107, 0.14)',
   success: '#3FB984',
   successSoft: 'rgba(63, 185, 132, 0.14)',
   warning: '#D4A054',
@@ -177,10 +189,16 @@ export const lightTheme: ThemePalette = {
   textMuted: '#989EA9',
   textInverse: '#FFFFFF',
 
-  accentCobalt: '#111318',
-  accentCobaltBright: '#fa6b6bff',
-  accentCobaltSoft: 'rgba(17, 19, 24, 0.07)',
-  accentCobaltBorder: 'rgba(17, 19, 24, 0.16)',
+  accentPrimary: '#FA6B6B',
+  accentPrimaryText: '#FFFFFF',
+  accentPrimaryLink: '#DF4F4F',
+  accentPrimarySoft: 'rgba(250, 107, 107, 0.12)',
+  accentPrimaryBorder: 'rgba(250, 107, 107, 0.28)',
+
+  accentCobalt: '#FA6B6B',
+  accentCobaltBright: '#DF4F4F',
+  accentCobaltSoft: 'rgba(250, 107, 107, 0.12)',
+  accentCobaltBorder: 'rgba(250, 107, 107, 0.28)',
 
   accentVolt: '#111318',
   accentVoltText: '#FFFFFF',
@@ -191,8 +209,8 @@ export const lightTheme: ThemePalette = {
   pillBg: 'rgba(15, 17, 21, 0.05)',
   hoverBg: 'rgba(15, 17, 21, 0.08)',
 
-  danger: '#DC2626',
-  dangerSoft: '#FEF2F2',
+  danger: '#DF4F4F',
+  dangerSoft: 'rgba(250, 107, 107, 0.12)',
   success: '#15803D',
   successSoft: '#F0FDF4',
   warning: '#B45309',
@@ -259,11 +277,11 @@ export const colors = {
   textPrimary: '#111318',
   textSecondary: '#616773',
   textMuted: '#989EA9',
-  teslaBlue: '#4B83F2',
-  teslaBlueSoft: 'rgba(75, 131, 242, 0.10)',
-  teslaBlueBorder: 'rgba(75, 131, 242, 0.25)',
-  danger: '#DC2626',
-  dangerSoft: '#FEF2F2',
+  teslaBlue: '#FA6B6B',
+  teslaBlueSoft: 'rgba(250, 107, 107, 0.12)',
+  teslaBlueBorder: 'rgba(250, 107, 107, 0.28)',
+  danger: '#DF4F4F',
+  dangerSoft: 'rgba(250, 107, 107, 0.12)',
   success: '#15803D',
   successSoft: '#F0FDF4',
   warning: '#B45309',

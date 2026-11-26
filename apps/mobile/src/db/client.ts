@@ -1,24 +1,29 @@
 import { openDatabaseSync } from 'expo-sqlite';
 import { drizzle } from 'drizzle-orm/expo-sqlite';
-import { and, asc, desc, eq, isNull } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, isNull, lte } from 'drizzle-orm';
 import * as schema from '@organiza/shared/schema';
 import {
   LOCAL_SQLITE_BOOTSTRAP_SQL,
+  LOCAL_SQLITE_MIGRATION_V2_SQL,
+  LOCAL_SQLITE_MIGRATION_V3_SQL,
   tasks,
   habits,
   habitLogs,
+  habitRewards,
   workBlocks,
   notePages,
   syncMeta,
   type TaskRecord,
   type HabitRecord,
   type HabitLogRecord,
+  type HabitRewardRecord,
   type WorkBlockRecord,
   type NotePageRecord,
   type SyncChangeset,
   type SyncBatchResponse,
 } from '@organiza/shared/schema';
 import {
+  buildDefaultRewardsSeed,
   buildInitialSeedDataset,
   createLocalId,
   getTodayDateKey,
@@ -103,6 +108,28 @@ export const localStore: LocalDatabaseEngine = {
       .all();
   },
 
+  getHabitLogsInRange(startDateKey: string, endDateKey: string): HabitLogRecord[] {
+    return db
+      .select()
+      .from(habitLogs)
+      .where(
+        and(
+          gte(habitLogs.dateKey, startDateKey),
+          lte(habitLogs.dateKey, endDateKey),
+          isNull(habitLogs.deletedAt)
+        )
+      )
+      .all();
+  },
+
+  getAllHabitLogs(): HabitLogRecord[] {
+    return db
+      .select()
+      .from(habitLogs)
+      .where(isNull(habitLogs.deletedAt))
+      .all();
+  },
+
   getHabitLogById(id: string): HabitLogRecord | undefined {
     return db.select().from(habitLogs).where(eq(habitLogs.id, id)).get();
   },
@@ -112,6 +139,30 @@ export const localStore: LocalDatabaseEngine = {
       .values(record)
       .onConflictDoUpdate({ target: habitLogs.id, set: record })
       .run();
+  },
+
+  getHabitRewards(): HabitRewardRecord[] {
+    return db
+      .select()
+      .from(habitRewards)
+      .where(isNull(habitRewards.deletedAt))
+      .orderBy(asc(habitRewards.costPoints), desc(habitRewards.createdAt))
+      .all();
+  },
+
+  getHabitRewardById(id: string): HabitRewardRecord | undefined {
+    return db.select().from(habitRewards).where(eq(habitRewards.id, id)).get();
+  },
+
+  upsertHabitReward(record: HabitRewardRecord): void {
+    db.insert(habitRewards)
+      .values(record)
+      .onConflictDoUpdate({ target: habitRewards.id, set: record })
+      .run();
+  },
+
+  updateHabitReward(id: string, patch: Partial<HabitRewardRecord>): void {
+    db.update(habitRewards).set(patch).where(eq(habitRewards.id, id)).run();
   },
 
   getWorkBlocksForDate(dateKey: string): WorkBlockRecord[] {
@@ -194,6 +245,11 @@ export const localStore: LocalDatabaseEngine = {
       tasks: db.select().from(tasks).where(eq(tasks.isDirty, true)).all(),
       habits: db.select().from(habits).where(eq(habits.isDirty, true)).all(),
       habitLogs: db.select().from(habitLogs).where(eq(habitLogs.isDirty, true)).all(),
+      habitRewards: db
+        .select()
+        .from(habitRewards)
+        .where(eq(habitRewards.isDirty, true))
+        .all(),
       workBlocks: db.select().from(workBlocks).where(eq(workBlocks.isDirty, true)).all(),
       notePages: db.select().from(notePages).where(eq(notePages.isDirty, true)).all(),
     };
@@ -206,6 +262,7 @@ export const localStore: LocalDatabaseEngine = {
         dirty.tasks.length +
         dirty.habits.length +
         dirty.habitLogs.length +
+        dirty.habitRewards.length +
         dirty.workBlocks.length +
         dirty.notePages.length
       );
@@ -232,6 +289,17 @@ export const localStore: LocalDatabaseEngine = {
         db.update(habitLogs)
           .set({ isDirty: false })
           .where(and(eq(habitLogs.id, item.id), eq(habitLogs.updatedAt, item.updatedAt)))
+          .run();
+      }
+      for (const item of sent.habitRewards) {
+        db.update(habitRewards)
+          .set({ isDirty: false })
+          .where(
+            and(
+              eq(habitRewards.id, item.id),
+              eq(habitRewards.updatedAt, item.updatedAt)
+            )
+          )
           .run();
       }
       for (const item of sent.workBlocks) {
@@ -265,6 +333,13 @@ export const localStore: LocalDatabaseEngine = {
         const localRow = this.getHabitLogById(remoteLog.id);
         if (!localRow || remoteLog.updatedAt >= localRow.updatedAt) {
           this.upsertHabitLog({ ...remoteLog, isDirty: false });
+        }
+      }
+
+      for (const remoteReward of response.changes.habitRewards ?? []) {
+        const localRow = this.getHabitRewardById(remoteReward.id);
+        if (!localRow || remoteReward.updatedAt >= localRow.updatedAt) {
+          this.upsertHabitReward({ ...remoteReward, isDirty: false });
         }
       }
 
@@ -304,6 +379,10 @@ export const localStore: LocalDatabaseEngine = {
         .set({ userId: authenticatedUserId, isDirty: true })
         .where(eq(habitLogs.userId, 'local-user'))
         .run();
+      db.update(habitRewards)
+        .set({ userId: authenticatedUserId, isDirty: true })
+        .where(eq(habitRewards.userId, 'local-user'))
+        .run();
       db.update(workBlocks)
         .set({ userId: authenticatedUserId, isDirty: true })
         .where(eq(workBlocks.userId, 'local-user'))
@@ -331,16 +410,41 @@ export function initializeLocalDatabase(defaultUserId = 'local-user'): void {
     expoSqliteDb.execSync(sqlStatement);
   }
 
+  // Migración idempotente V2/V3 para bases locales existentes
+  for (const migrationSql of [
+    ...LOCAL_SQLITE_MIGRATION_V2_SQL,
+    ...LOCAL_SQLITE_MIGRATION_V3_SQL,
+  ]) {
+    try {
+      expoSqliteDb.execSync(migrationSql);
+    } catch {
+      // La columna o tabla ya existe
+    }
+  }
+
   if (!localStore.getSyncMeta('initial_seed_v1')) {
     const seed = buildInitialSeedDataset(defaultUserId);
     expoSqliteDb.withTransactionSync(() => {
       for (const item of seed.habits) localStore.upsertHabit(item);
       for (const item of seed.habitLogs) localStore.upsertHabitLog(item);
+      for (const item of seed.habitRewards) localStore.upsertHabitReward(item);
       for (const item of seed.tasks) localStore.upsertTask(item);
       for (const item of seed.workBlocks) localStore.upsertWorkBlock(item);
       for (const item of seed.notePages) localStore.upsertNotePage(item);
       localStore.setSyncMeta('initial_seed_v1', 'completed');
+      localStore.setSyncMeta('initial_rewards_v2', 'completed');
     });
+  } else if (!localStore.getSyncMeta('initial_rewards_v2')) {
+    const existingRewards = localStore.getHabitRewards();
+    if (existingRewards.length === 0) {
+      const defaults = buildDefaultRewardsSeed(defaultUserId);
+      expoSqliteDb.withTransactionSync(() => {
+        for (const reward of defaults) localStore.upsertHabitReward(reward);
+        localStore.setSyncMeta('initial_rewards_v2', 'completed');
+      });
+    } else {
+      localStore.setSyncMeta('initial_rewards_v2', 'completed');
+    }
   }
 
   isInitialized = true;

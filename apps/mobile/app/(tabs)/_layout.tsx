@@ -19,7 +19,7 @@ import {
   Plus,
   Sun,
   User,
-} from 'lucide-react-native';
+} from '../../src/components/icons';
 import {
   iconMetrics,
   radii,
@@ -120,23 +120,6 @@ function DesktopIconRail({
 
   return (
     <View style={[styles.railColumn, { backgroundColor: theme.canvas }]}>
-      {/* Monograma minimalista superior */}
-      <Pressable
-        onPress={() => router.push('/(tabs)')}
-        style={[
-          styles.brandMark,
-          {
-            backgroundColor: theme.card,
-            borderColor: theme.glassBorder,
-          },
-        ]}
-        accessibilityLabel="Organiza OS Dashboard"
-      >
-        <Text style={[styles.brandMarkLetter, { color: theme.textPrimary }]}>
-          O
-        </Text>
-      </Pressable>
-
       {/* Cápsula vertical principal con botones circulares */}
       <View
         style={[
@@ -162,14 +145,14 @@ function DesktopIconRail({
               style={({ pressed }) => [
                 styles.railCircleBtn,
                 {
-                  backgroundColor: isActive ? theme.accentVolt : theme.pillBg,
+                  backgroundColor: isActive ? theme.accentPrimary : theme.pillBg,
                 },
                 pressed && { opacity: 0.82, transform: [{ scale: 0.96 }] },
               ]}
             >
               <IconComp
                 size={20}
-                color={isActive ? theme.accentVoltText : theme.textSecondary}
+                color={isActive ? theme.accentPrimaryText : theme.textSecondary}
                 strokeWidth={isActive ? 2.1 : iconMetrics.strokeWidth}
               />
             </Pressable>
@@ -227,15 +210,15 @@ function DesktopIconRail({
           style={({ pressed }) => [
             styles.railCircleBtn,
             {
-              backgroundColor: hasSession ? theme.accentCobaltSoft : theme.pillBg,
+              backgroundColor: hasSession ? theme.accentPrimarySoft : theme.pillBg,
               borderWidth: hasSession ? 1 : 0,
-              borderColor: theme.accentCobaltBorder,
+              borderColor: theme.accentPrimaryBorder,
             },
             pressed && { opacity: 0.8 },
           ]}
         >
           {hasSession ? (
-            <Text style={[styles.railInitials, { color: theme.textPrimary }]}>
+            <Text style={[styles.railInitials, { color: theme.accentPrimaryLink }]}>
               {initials}
             </Text>
           ) : (
@@ -308,14 +291,14 @@ function FloatingLiquidGlassDock({
                   style={[
                     styles.iconSquircle,
                     isFocused && {
-                      backgroundColor: theme.accentVolt,
-                      borderColor: theme.accentVoltBorder,
+                      backgroundColor: theme.accentPrimary,
+                      borderColor: theme.accentPrimaryBorder,
                     },
                   ]}
                 >
                   <IconComponent
                     size={18}
-                    color={isFocused ? theme.accentVoltText : theme.textSecondary}
+                    color={isFocused ? theme.accentPrimaryText : theme.textSecondary}
                     strokeWidth={iconMetrics.strokeWidth}
                   />
                 </View>
@@ -420,20 +403,6 @@ const styles = StyleSheet.create({
     paddingVertical: 20,
     alignItems: 'center',
     justifyContent: 'space-between',
-  },
-  brandMark: {
-    width: 44,
-    height: 44,
-    borderRadius: radii.squircle,
-    borderCurve: 'continuous',
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  brandMarkLetter: {
-    fontSize: 19,
-    fontWeight: '800',
-    letterSpacing: -0.5,
   },
   railCapsule: {
     borderRadius: 999,

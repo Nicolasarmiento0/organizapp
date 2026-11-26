@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { ArrowRight, ChevronLeft, ChevronRight } from 'lucide-react-native';
+import { ArrowRight, ChevronLeft, ChevronRight } from '../../components/icons';
 import { radii, spacing } from '../../theme/tokens';
 import { useTheme } from '../../theme/ThemeContext';
 import { LiquidGlassCard } from '../../components/glass/LiquidGlassCard';
@@ -190,10 +190,10 @@ export const MiniCalendarBento: React.FC<MiniCalendarBentoProps> = ({
                     isToday &&
                       !isSelected && {
                         borderWidth: 1.5,
-                        borderColor: theme.textPrimary,
+                        borderColor: theme.accentPrimary,
                       },
                     isSelected && {
-                      backgroundColor: theme.accentVolt,
+                      backgroundColor: theme.accentPrimary,
                       borderWidth: 0,
                     },
                   ]}
@@ -207,7 +207,7 @@ export const MiniCalendarBento: React.FC<MiniCalendarBentoProps> = ({
                           : theme.textMuted,
                       },
                       isSelected && {
-                        color: theme.accentVoltText,
+                        color: theme.accentPrimaryText,
                         fontWeight: '800',
                       },
                     ]}
@@ -218,7 +218,7 @@ export const MiniCalendarBento: React.FC<MiniCalendarBentoProps> = ({
                     <View
                       style={[
                         styles.activityDot,
-                        { backgroundColor: theme.accentCobaltBright },
+                        { backgroundColor: theme.accentPrimary },
                       ]}
                     />
                   ) : null}
@@ -231,10 +231,10 @@ export const MiniCalendarBento: React.FC<MiniCalendarBentoProps> = ({
 
       {/* Footer link */}
       <Pressable onPress={onOpenFullCalendar} style={styles.footerLink}>
-        <Text style={[styles.footerLinkText, { color: theme.accentCobaltBright }]}>
+        <Text style={[styles.footerLinkText, { color: theme.accentPrimaryLink }]}>
           Abrir Calendario macOS
         </Text>
-        <ArrowRight size={14} color={theme.accentCobaltBright} strokeWidth={2.2} />
+        <ArrowRight size={14} color={theme.accentPrimaryLink} strokeWidth={2.2} />
       </Pressable>
     </LiquidGlassCard>
   );

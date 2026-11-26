@@ -17,7 +17,7 @@ import {
   Flame,
   Sparkles,
   X,
-} from 'lucide-react-native';
+} from '../icons';
 import type { TaskPriority } from '@organiza/shared/schema';
 import {
   iconMetrics,

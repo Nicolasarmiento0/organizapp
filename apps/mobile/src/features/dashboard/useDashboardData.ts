@@ -9,7 +9,14 @@ import {
   localStore,
   subscribeDatabaseChanges,
 } from '../../db/client';
-import { useTodayCockpit, type HabitWithDailyStatus } from '../today';
+import { useTodayCockpit } from '../today';
+import {
+  computeHabitBadges,
+  useHabitsManager,
+  type BadgesSummary,
+  type EnrichedHabitItem,
+  type HabitBadgeProgress,
+} from '../habits';
 
 export interface CalendarMonthRef {
   year: number;
@@ -26,11 +33,9 @@ export interface DashboardTelemetry {
   pendingRemindersWithAlert: number;
   scheduledHours: string;
   scheduledMinutes: number;
-  totalStreakDays: number;
-  rewardPoints: number;
-  nextRewardTarget: number;
-  nextRewardTitle: string;
-  rewardProgressPercent: number;
+  unlockedBadges: number;
+  totalBadges: number;
+  nextBadge: HabitBadgeProgress | null;
 }
 
 function parseTimeToMinutes(hhmm: string): number {
@@ -46,13 +51,6 @@ function formatDurationMinutes(totalMinutes: number): string {
   const h = Math.floor(totalMinutes / 60);
   const m = totalMinutes % 60;
   return `${h}h ${String(m).padStart(2, '0')}m`;
-}
-
-function resolveRewardTitle(target: number): string {
-  if (target <= 250) return 'Café de especialidad + pausa';
-  if (target <= 500) return 'Cena especial / Tiempo libre';
-  if (target <= 750) return 'Tarde de cine o gaming';
-  return 'Upgrade de setup o escapada';
 }
 
 function computeActiveDaysInMonth(
@@ -75,7 +73,7 @@ function computeActiveDaysInMonth(
   for (let day = 1; day <= daysInMonth; day++) {
     const key = `${monthPrefix}${String(day).padStart(2, '0')}`;
     const logs = localStore.getHabitLogsForDate(key);
-    if (logs.some((log) => log.isCompleted)) {
+    if (logs.some((log) => log.isCompleted || log.status === 'completed')) {
       result.add(key);
     }
   }
@@ -91,13 +89,14 @@ export function useDashboardData(userId = 'local-user') {
   const todayKey = getTodayDateKey();
   const now = new Date();
 
+  const { tasks, metrics, toggleTask } = useTodayCockpit(userId);
   const {
-    tasks,
     habits,
-    metrics,
-    toggleTask,
-    toggleHabitForToday,
-  } = useTodayCockpit(userId);
+    rawHabits,
+    allLogs,
+    toggleBinaryHabit,
+    adjustQuantitativeHabit,
+  } = useHabitsManager(userId);
 
   const [selectedDateKey, setSelectedDateKey] = useState<string>(todayKey);
   const [calendarMonth, setCalendarMonth] = useState<CalendarMonthRef>({
@@ -172,11 +171,28 @@ export function useDashboardData(userId = 'local-user') {
     ]
   );
 
+  const badgesSummary = useMemo<BadgesSummary>(
+    () => computeHabitBadges(rawHabits, allLogs, todayKey),
+    [rawHabits, allLogs, todayKey]
+  );
+
+  const todayHabits = useMemo<EnrichedHabitItem[]>(() => {
+    const scheduled = habits.filter(
+      (h) => h.isScheduledOnActiveDate && !h.isPausedOnActiveDate
+    );
+    return scheduled.length > 0 ? scheduled : habits;
+  }, [habits]);
+
   const telemetry = useMemo<DashboardTelemetry>(() => {
+    const scheduledToday = habits.filter(
+      (h) => h.isScheduledOnActiveDate && !h.isPausedOnActiveDate
+    );
+    const totalHabits = scheduledToday.length;
+    const completedHabits = scheduledToday.filter(
+      (h) => h.completedOnActiveDate
+    ).length;
     const habitPercent =
-      metrics.totalHabits > 0
-        ? Math.round((metrics.completedHabits / metrics.totalHabits) * 100)
-        : 0;
+      totalHabits > 0 ? Math.round((completedHabits / totalHabits) * 100) : 0;
 
     const pendingRemindersWithAlert = tasks.filter(
       (t) => !t.isCompleted && Boolean(t.reminderAt)
@@ -188,34 +204,34 @@ export function useDashboardData(userId = 'local-user') {
       return sum + (diff > 0 ? diff : 0);
     }, 0);
 
-    const totalStreakDays = habits.reduce((sum, h) => sum + h.streak, 0);
-    const rewardPoints = totalStreakDays * 10 + metrics.completedHabits * 25;
-    const nextRewardTarget = Math.max(
-      250,
-      Math.ceil((rewardPoints + 1) / 250) * 250
-    );
-    const rewardProgressPercent = Math.min(
-      100,
-      Math.round((rewardPoints / nextRewardTarget) * 100)
-    );
-
     return {
       habitPercent,
-      completedHabits: metrics.completedHabits,
-      totalHabits: metrics.totalHabits,
+      completedHabits,
+      totalHabits,
       tasksCompleted: metrics.completedTasks,
       tasksTotal: metrics.totalTasks,
       pendingTasks: metrics.pendingTasks,
       pendingRemindersWithAlert,
       scheduledHours: formatDurationMinutes(scheduledMinutes),
       scheduledMinutes,
-      totalStreakDays,
-      rewardPoints,
-      nextRewardTarget,
-      nextRewardTitle: resolveRewardTitle(nextRewardTarget),
-      rewardProgressPercent,
+      unlockedBadges: badgesSummary.unlockedCount,
+      totalBadges: badgesSummary.totalCount,
+      nextBadge: badgesSummary.nextBadge,
     };
-  }, [blocksForSelectedDate, habits, metrics, tasks]);
+  }, [badgesSummary, blocksForSelectedDate, habits, metrics, tasks]);
+
+  const handleQuickHabitTap = useCallback(
+    (habitId: string) => {
+      const target = habits.find((h) => h.id === habitId);
+      if (!target) return;
+      if (target.habitType === 'quantitative') {
+        adjustQuantitativeHabit(habitId, 1, todayKey);
+      } else {
+        toggleBinaryHabit(habitId, todayKey);
+      }
+    },
+    [habits, adjustQuantitativeHabit, toggleBinaryHabit, todayKey]
+  );
 
   return {
     todayKey,
@@ -228,10 +244,13 @@ export function useDashboardData(userId = 'local-user') {
     activeDaysInMonth,
     blocksForSelectedDate,
     tasks,
-    habits: habits as HabitWithDailyStatus[],
+    habits: todayHabits,
+    allEnrichedHabits: habits,
+    badgesSummary,
     notes,
     telemetry,
-    toggleHabitForToday,
+    handleQuickHabitTap,
+    toggleBinaryHabitForDate: toggleBinaryHabit,
     toggleTask,
   };
 }

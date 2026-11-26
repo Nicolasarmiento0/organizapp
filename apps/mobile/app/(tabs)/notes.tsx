@@ -14,7 +14,7 @@ import {
   Pin,
   Plus,
   Sparkles,
-} from 'lucide-react-native';
+} from '../../src/components/icons';
 import { iconMetrics, radii, spacing } from '../../src/theme/tokens';
 import { useTheme } from '../../src/theme/ThemeContext';
 import { LiquidGlassCard } from '../../src/components/glass/LiquidGlassCard';

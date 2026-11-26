@@ -1,11 +1,11 @@
 import React from 'react';
 import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
-import type { LucideIcon } from 'lucide-react-native';
+import type { AppIcon } from '../icons';
 import { iconMetrics, type MacModuleType } from '../../theme/tokens';
 import { useTheme } from '../../theme/ThemeContext';
 
 export interface MacIconBadgeProps {
-  icon: LucideIcon;
+  icon: AppIcon;
   module: MacModuleType;
   size?: number;
   containerSize?: number;

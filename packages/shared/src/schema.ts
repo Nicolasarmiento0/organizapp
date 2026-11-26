@@ -99,10 +99,13 @@ export const tasks = sqliteTable(
 
 /**
  * ============================================================================
- * 3. FASE 1: HÁBITOS Y REGISTRO DIARIO (Streak & Daily Tracking)
+ * 3. FASE 1 / 4: HÁBITOS INTELIGENTES, RACHAS, ESCUDOS Y PREMIOS
  * ============================================================================
  */
-export type HabitFrequency = 'daily' | 'weekdays' | 'weekends';
+export type HabitFrequency = 'daily' | 'weekdays' | 'weekends' | 'custom';
+export type HabitType = 'binary' | 'quantitative';
+export type HabitTimeOfDay = 'any' | 'morning' | 'afternoon' | 'evening';
+export type HabitLogStatus = 'completed' | 'partial' | 'rest_shield' | 'paused';
 
 export const habits = sqliteTable(
   'habits',
@@ -111,9 +114,17 @@ export const habits = sqliteTable(
     userId: text('user_id').notNull(),
     title: text('title').notNull(),
     icon: text('icon').notNull().default('Sparkles'),
+    habitType: text('habit_type').$type<HabitType>().notNull().default('binary'),
+    unit: text('unit'),
     frequency: text('frequency').$type<HabitFrequency>().notNull().default('daily'),
+    scheduledDays: text('scheduled_days').notNull().default('[0,1,2,3,4,5,6]'),
     targetPerDay: integer('target_per_day').notNull().default(1),
+    weeklyGoal: integer('weekly_goal'), // Opcional: 1..7 veces por semana
     streak: integer('streak').notNull().default(0),
+    bestStreak: integer('best_streak').notNull().default(0),
+    isPaused: integer('is_paused', { mode: 'boolean' }).notNull().default(false),
+    pausedUntil: text('paused_until'), // YYYY-MM-DD o null (indefinido)
+    timeOfDay: text('time_of_day').$type<HabitTimeOfDay>().notNull().default('any'),
     reminderTime: text('reminder_time'), // Formato HH:mm
     isArchived: integer('is_archived', { mode: 'boolean' }).notNull().default(false),
     isDirty: integer('is_dirty', { mode: 'boolean' }).notNull().default(true),
@@ -136,6 +147,7 @@ export const habitLogs = sqliteTable(
     dateKey: text('date_key').notNull(), // YYYY-MM-DD
     completedCount: integer('completed_count').notNull().default(1),
     isCompleted: integer('is_completed', { mode: 'boolean' }).notNull().default(true),
+    status: text('status').$type<HabitLogStatus>().notNull().default('completed'),
     isDirty: integer('is_dirty', { mode: 'boolean' }).notNull().default(true),
     deletedAt: integer('deleted_at'),
     updatedAt: integer('updated_at').notNull(),
@@ -143,6 +155,28 @@ export const habitLogs = sqliteTable(
   (table) => [
     index('idx_habit_logs_date').on(table.dateKey, table.habitId),
     index('idx_habit_logs_dirty').on(table.isDirty),
+  ]
+);
+
+export const habitRewards = sqliteTable(
+  'habit_rewards',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id').notNull(),
+    title: text('title').notNull(),
+    description: text('description'),
+    costPoints: integer('cost_points').notNull().default(250),
+    icon: text('icon').notNull().default('Award'),
+    redeemedCount: integer('redeemed_count').notNull().default(0),
+    lastRedeemedAt: integer('last_redeemed_at'),
+    isDirty: integer('is_dirty', { mode: 'boolean' }).notNull().default(true),
+    deletedAt: integer('deleted_at'),
+    createdAt: integer('created_at').notNull(),
+    updatedAt: integer('updated_at').notNull(),
+  },
+  (table) => [
+    index('idx_habit_rewards_user_updated').on(table.userId, table.updatedAt),
+    index('idx_habit_rewards_dirty').on(table.isDirty),
   ]
 );
 
@@ -229,6 +263,9 @@ export type NewHabitRecord = typeof habits.$inferInsert;
 export type HabitLogRecord = typeof habitLogs.$inferSelect;
 export type NewHabitLogRecord = typeof habitLogs.$inferInsert;
 
+export type HabitRewardRecord = typeof habitRewards.$inferSelect;
+export type NewHabitRewardRecord = typeof habitRewards.$inferInsert;
+
 export type WorkBlockRecord = typeof workBlocks.$inferSelect;
 export type NewWorkBlockRecord = typeof workBlocks.$inferInsert;
 
@@ -239,6 +276,7 @@ export interface SyncChangeset {
   tasks: TaskRecord[];
   habits: HabitRecord[];
   habitLogs: HabitLogRecord[];
+  habitRewards: HabitRewardRecord[];
   workBlocks: WorkBlockRecord[];
   notePages: NotePageRecord[];
 }
@@ -286,9 +324,17 @@ export const LOCAL_SQLITE_BOOTSTRAP_SQL: readonly string[] = [
     user_id TEXT NOT NULL,
     title TEXT NOT NULL,
     icon TEXT NOT NULL DEFAULT 'Sparkles',
+    habit_type TEXT NOT NULL DEFAULT 'binary',
+    unit TEXT,
     frequency TEXT NOT NULL DEFAULT 'daily',
+    scheduled_days TEXT NOT NULL DEFAULT '[0,1,2,3,4,5,6]',
     target_per_day INTEGER NOT NULL DEFAULT 1,
+    weekly_goal INTEGER,
     streak INTEGER NOT NULL DEFAULT 0,
+    best_streak INTEGER NOT NULL DEFAULT 0,
+    is_paused INTEGER NOT NULL DEFAULT 0,
+    paused_until TEXT,
+    time_of_day TEXT NOT NULL DEFAULT 'any',
     reminder_time TEXT,
     is_archived INTEGER NOT NULL DEFAULT 0,
     is_dirty INTEGER NOT NULL DEFAULT 1,
@@ -306,12 +352,30 @@ export const LOCAL_SQLITE_BOOTSTRAP_SQL: readonly string[] = [
     date_key TEXT NOT NULL,
     completed_count INTEGER NOT NULL DEFAULT 1,
     is_completed INTEGER NOT NULL DEFAULT 1,
+    status TEXT NOT NULL DEFAULT 'completed',
     is_dirty INTEGER NOT NULL DEFAULT 1,
     deleted_at INTEGER,
     updated_at INTEGER NOT NULL
   );`,
   `CREATE INDEX IF NOT EXISTS idx_habit_logs_date ON habit_logs(date_key, habit_id);`,
   `CREATE INDEX IF NOT EXISTS idx_habit_logs_dirty ON habit_logs(is_dirty);`,
+
+  `CREATE TABLE IF NOT EXISTS habit_rewards (
+    id TEXT PRIMARY KEY NOT NULL,
+    user_id TEXT NOT NULL,
+    title TEXT NOT NULL,
+    description TEXT,
+    cost_points INTEGER NOT NULL DEFAULT 250,
+    icon TEXT NOT NULL DEFAULT 'Award',
+    redeemed_count INTEGER NOT NULL DEFAULT 0,
+    last_redeemed_at INTEGER,
+    is_dirty INTEGER NOT NULL DEFAULT 1,
+    deleted_at INTEGER,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );`,
+  `CREATE INDEX IF NOT EXISTS idx_habit_rewards_user_updated ON habit_rewards(user_id, updated_at);`,
+  `CREATE INDEX IF NOT EXISTS idx_habit_rewards_dirty ON habit_rewards(is_dirty);`,
 
   `CREATE TABLE IF NOT EXISTS work_blocks (
     id TEXT PRIMARY KEY NOT NULL,
@@ -354,4 +418,42 @@ export const LOCAL_SQLITE_BOOTSTRAP_SQL: readonly string[] = [
     value TEXT NOT NULL,
     updated_at INTEGER NOT NULL
   );`,
+];
+
+/**
+ * Sentencias de migración incremental V2 para bases `expo-sqlite` existentes.
+ * Cada sentencia se ejecuta dentro de un `try/catch` individual (idempotente).
+ */
+export const LOCAL_SQLITE_MIGRATION_V2_SQL: readonly string[] = [
+  `ALTER TABLE habits ADD COLUMN habit_type TEXT NOT NULL DEFAULT 'binary';`,
+  `ALTER TABLE habits ADD COLUMN unit TEXT;`,
+  `ALTER TABLE habits ADD COLUMN scheduled_days TEXT NOT NULL DEFAULT '[0,1,2,3,4,5,6]';`,
+  `ALTER TABLE habits ADD COLUMN best_streak INTEGER NOT NULL DEFAULT 0;`,
+  `ALTER TABLE habits ADD COLUMN is_paused INTEGER NOT NULL DEFAULT 0;`,
+  `ALTER TABLE habits ADD COLUMN paused_until TEXT;`,
+  `ALTER TABLE habits ADD COLUMN time_of_day TEXT NOT NULL DEFAULT 'any';`,
+  `ALTER TABLE habit_logs ADD COLUMN status TEXT NOT NULL DEFAULT 'completed';`,
+  `CREATE TABLE IF NOT EXISTS habit_rewards (
+    id TEXT PRIMARY KEY NOT NULL,
+    user_id TEXT NOT NULL,
+    title TEXT NOT NULL,
+    description TEXT,
+    cost_points INTEGER NOT NULL DEFAULT 250,
+    icon TEXT NOT NULL DEFAULT 'Award',
+    redeemed_count INTEGER NOT NULL DEFAULT 0,
+    last_redeemed_at INTEGER,
+    is_dirty INTEGER NOT NULL DEFAULT 1,
+    deleted_at INTEGER,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );`,
+  `CREATE INDEX IF NOT EXISTS idx_habit_rewards_user_updated ON habit_rewards(user_id, updated_at);`,
+  `CREATE INDEX IF NOT EXISTS idx_habit_rewards_dirty ON habit_rewards(is_dirty);`,
+];
+
+/**
+ * Sentencias de migración incremental V3 (Objetivo semanal opcional en hábitos).
+ */
+export const LOCAL_SQLITE_MIGRATION_V3_SQL: readonly string[] = [
+  `ALTER TABLE habits ADD COLUMN weekly_goal INTEGER;`,
 ];
