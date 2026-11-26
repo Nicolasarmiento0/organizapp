@@ -1,0 +1,46 @@
+{
+  "expo": {
+    "name": "Organiza",
+    "slug": "organiza-app",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "organizaapp",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "backgroundColor": "#F5F5F7"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.nico.organizaapp",
+      "infoPlist": {
+        "UIBackgroundModes": ["remote-notification"]
+      }
+    },
+    "android": {
+      "package": "com.nico.organizaapp",
+      "adaptiveIcon": {
+        "backgroundColor": "#F5F5F7"
+      }
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "single",
+      "backgroundColor": "#F5F5F7"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-sqlite",
+      "expo-secure-store",
+      [
+        "expo-notifications",
+        {
+          "color": "#3E6AE1"
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

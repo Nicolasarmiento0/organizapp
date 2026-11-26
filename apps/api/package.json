@@ -1,0 +1,28 @@
+{
+  "name": "@organiza/api",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "cf-typegen": "wrangler types",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate:local": "wrangler d1 migrations apply organiza-app-db --local",
+    "db:migrate:remote": "wrangler d1 migrations apply organiza-app-db --remote",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@better-auth/expo": "^1.2.5",
+    "@organiza/shared": "*",
+    "better-auth": "^1.2.5",
+    "drizzle-orm": "^0.38.3",
+    "hono": "^4.7.2"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250214.0",
+    "drizzle-kit": "^0.30.4",
+    "typescript": "^5.7.2",
+    "wrangler": "^3.109.0"
+  }
+}

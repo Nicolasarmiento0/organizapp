@@ -1,0 +1,25 @@
+{
+  "name": "organiza-app",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Personal productivity & organization monorepo — Offline-First (Web, iOS, Android) + Cloudflare Workers D1 + Better Auth",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "start": "npm --workspace=@organiza/mobile run start",
+    "web": "npm --workspace=@organiza/mobile run web",
+    "ios": "npm --workspace=@organiza/mobile run ios",
+    "android": "npm --workspace=@organiza/mobile run android",
+    "dev:mobile": "npm --workspace=@organiza/mobile run start",
+    "dev:api": "npm --workspace=@organiza/api run dev",
+    "db:generate": "npm --workspace=@organiza/api run db:generate",
+    "db:migrate:local": "npm --workspace=@organiza/api run db:migrate:local",
+    "db:migrate:remote": "npm --workspace=@organiza/api run db:migrate:remote",
+    "typecheck": "npm --workspaces --if-present run typecheck"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
