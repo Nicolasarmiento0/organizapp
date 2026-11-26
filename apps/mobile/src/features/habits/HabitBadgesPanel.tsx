@@ -21,7 +21,7 @@ import {
   Zap,
   type AppIcon,
 } from '../../components/icons';
-import { iconMetrics, radii, spacing } from '../../theme/tokens';
+import { iconMetrics, radii, spacing, typography } from '../../theme/tokens';
 import { useTheme } from '../../theme/ThemeContext';
 import { LiquidGlassCard } from '../../components/glass/LiquidGlassCard';
 import type {
@@ -363,8 +363,7 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 17,
-    fontWeight: '700',
-    letterSpacing: -0.3,
+    ...typography.cardTitle,
   },
   subtitle: {
     fontSize: 12,

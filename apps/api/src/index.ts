@@ -438,4 +438,155 @@ app.get('/api/sync/pull', async (c) => {
   return c.json(response);
 });
 
+const ALLOWED_IMAGE_TYPES: Record<string, string> = {
+  'image/webp': 'webp',
+  'image/jpeg': 'jpg',
+  'image/jpg': 'jpg',
+  'image/png': 'png',
+  'image/gif': 'gif',
+};
+
+const MAX_IMAGE_BYTES = 2 * 1024 * 1024; // 2 MB máximo (objetivo cliente ~80 KB WebP)
+
+function decodeBase64ToUint8Array(base64Input: string): Uint8Array {
+  const clean = base64Input.replace(/^data:[^;]+;base64,/, '').replace(/\s+/g, '');
+  const binary = atob(clean);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+}
+
+/**
+ * Sube imágenes comprimidas (WebP ~80 KB) al bucket gratuito de Cloudflare R2.
+ */
+app.post('/api/media/upload', async (c) => {
+  const auth = createAuth(c.env);
+  const sessionResult = await auth.api.getSession({
+    headers: c.req.raw.headers,
+  });
+
+  if (!sessionResult) {
+    return c.json({ ok: false, error: 'UNAUTHORIZED' }, 401);
+  }
+
+  const bucket = c.env.MEDIA_BUCKET;
+  if (!bucket) {
+    return c.json(
+      { ok: false, error: 'MEDIA_BUCKET_NOT_CONFIGURED' },
+      503
+    );
+  }
+
+  let bytes: Uint8Array;
+  let contentType = 'image/webp';
+
+  const requestContentType = c.req.header('content-type') || '';
+
+  try {
+    if (requestContentType.includes('multipart/form-data')) {
+      const formData = await c.req.formData();
+      const uploaded = formData.get('file');
+      if (!(uploaded instanceof File)) {
+        return c.json({ ok: false, error: 'MISSING_FILE' }, 400);
+      }
+      contentType = (uploaded.type || 'image/webp').toLowerCase();
+      bytes = new Uint8Array(await uploaded.arrayBuffer());
+    } else {
+      const payload = await c.req.json<{
+        base64?: string;
+        contentType?: string;
+      }>();
+      if (!payload?.base64 || typeof payload.base64 !== 'string') {
+        return c.json({ ok: false, error: 'MISSING_BASE64' }, 400);
+      }
+      const dataUrlMatch = payload.base64.match(/^data:(image\/[a-zA-Z0-9+.-]+);base64,/);
+      contentType = (
+        payload.contentType ||
+        dataUrlMatch?.[1] ||
+        'image/webp'
+      ).toLowerCase();
+      bytes = decodeBase64ToUint8Array(payload.base64);
+    }
+  } catch (error) {
+    logEvent('warn', 'media_upload_parse_failed', {
+      userId: sessionResult.user.id,
+      message: error instanceof Error ? error.message : 'Invalid upload payload',
+    });
+    return c.json({ ok: false, error: 'INVALID_UPLOAD_PAYLOAD' }, 400);
+  }
+
+  const ext = ALLOWED_IMAGE_TYPES[contentType];
+  if (!ext) {
+    return c.json({ ok: false, error: 'UNSUPPORTED_MEDIA_TYPE' }, 415);
+  }
+  if (bytes.byteLength === 0 || bytes.byteLength > MAX_IMAGE_BYTES) {
+    return c.json({ ok: false, error: 'IMAGE_TOO_LARGE' }, 413);
+  }
+
+  const key = `users/${sessionResult.user.id}/${Date.now()}-${crypto.randomUUID().slice(0, 8)}.${ext}`;
+
+  await bucket.put(key, bytes, {
+    httpMetadata: {
+      contentType,
+      cacheControl: 'public, max-age=31536000, immutable',
+    },
+  });
+
+  logEvent('info', 'media_uploaded_r2', {
+    userId: sessionResult.user.id,
+    key,
+    sizeBytes: bytes.byteLength,
+    contentType,
+  });
+
+  return c.json({
+    ok: true,
+    key,
+    url: `/api/media/${key}`,
+    sizeBytes: bytes.byteLength,
+    contentType,
+  });
+});
+
+/**
+ * Sirve imágenes almacenadas en Cloudflare R2 con caché inmutable.
+ */
+app.get('/api/media/*', async (c) => {
+  const bucket = c.env.MEDIA_BUCKET;
+  if (!bucket) {
+    return c.json({ ok: false, error: 'MEDIA_BUCKET_NOT_CONFIGURED' }, 503);
+  }
+
+  const rawKey = c.req.path.replace(/^\/api\/media\//, '');
+  let key: string;
+  try {
+    key = decodeURIComponent(rawKey);
+  } catch {
+    return c.json({ ok: false, error: 'INVALID_MEDIA_KEY' }, 400);
+  }
+
+  if (!key || key.includes('..') || key.startsWith('/')) {
+    return c.json({ ok: false, error: 'INVALID_MEDIA_KEY' }, 400);
+  }
+
+  const object = await bucket.get(key);
+  if (!object) {
+    return c.json({ ok: false, error: 'MEDIA_NOT_FOUND' }, 404);
+  }
+
+  const headers = new Headers();
+  object.writeHttpMetadata(headers);
+  headers.set('ETag', object.httpEtag);
+  if (!headers.get('Cache-Control')) {
+    headers.set('Cache-Control', 'public, max-age=31536000, immutable');
+  }
+
+  return new Response(object.body, {
+    status: 200,
+    headers,
+  });
+});
+
 export default app;

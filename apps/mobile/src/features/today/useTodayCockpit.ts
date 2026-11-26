@@ -32,6 +32,8 @@ export interface CreateTaskInput {
   priority?: TaskPriority;
   dueDate?: string | null;
   reminderAt?: number | null;
+  sourcePageId?: string | null;
+  sourceBlockId?: string | null;
   userId?: string;
 }
 
@@ -109,6 +111,8 @@ export function insertTaskOfflineFirst(input: CreateTaskInput): TaskRecord {
     dueDate: input.dueDate !== undefined ? input.dueDate : todayKey,
     reminderAt: input.reminderAt ?? null,
     notificationId: null,
+    sourcePageId: input.sourcePageId ?? null,
+    sourceBlockId: input.sourceBlockId ?? null,
     isDirty: true,
     deletedAt: null,
     createdAt: now,

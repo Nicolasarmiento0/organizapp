@@ -1,9 +1,15 @@
 import React, { useEffect, useState } from 'react';
-import { StyleSheet } from 'react-native';
+import { Platform, StyleSheet } from 'react-native';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import {
+  useFonts,
+  PlusJakartaSans_500Medium,
+  PlusJakartaSans_600SemiBold,
+  PlusJakartaSans_700Bold,
+} from '@expo-google-fonts/plus-jakarta-sans';
 import { ThemeProvider, useTheme } from '../src/theme/ThemeContext';
 import { initializeLocalDatabase } from '../src/db/client';
 import { claimLocalRecordsForUser, syncWithCloudflareD1 } from '../src/db/sync';
@@ -18,6 +24,25 @@ import { configureLocalNotifications } from '../src/services/notifications';
 // Inicialización síncrona en 0 ms antes del primer frame de UI
 initializeLocalDatabase('local-user');
 configureLocalNotifications();
+
+// Elimina el borde/anillo azul nativo del navegador en Web al enfocar inputs de texto
+if (Platform.OS === 'web' && typeof document !== 'undefined') {
+  const styleId = 'organiza-web-input-reset';
+  if (!document.getElementById(styleId)) {
+    const style = document.createElement('style');
+    style.id = styleId;
+    style.textContent = `
+      input, textarea, [contenteditable="true"],
+      input:focus, textarea:focus, [contenteditable="true"]:focus,
+      input:focus-visible, textarea:focus-visible, [contenteditable="true"]:focus-visible {
+        outline: none !important;
+        outline-width: 0 !important;
+        box-shadow: none !important;
+      }
+    `;
+    document.head.appendChild(style);
+  }
+}
 
 function RootNavigator() {
   const { theme } = useTheme();
@@ -100,6 +125,12 @@ function RootNavigator() {
 }
 
 export default function RootLayout() {
+  useFonts({
+    PlusJakartaSans_500Medium,
+    PlusJakartaSans_600SemiBold,
+    PlusJakartaSans_700Bold,
+  });
+
   return (
     <ThemeProvider>
       <RootNavigator />

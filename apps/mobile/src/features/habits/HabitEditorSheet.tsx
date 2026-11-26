@@ -17,7 +17,7 @@ import type {
   HabitTimeOfDay,
   HabitType,
 } from '@organiza/shared/schema';
-import { iconMetrics, radii, shadows, spacing } from '../../theme/tokens';
+import { iconMetrics, radii, shadows, spacing, typography } from '../../theme/tokens';
 import { useTheme } from '../../theme/ThemeContext';
 import { LiquidGlassCard } from '../../components/glass/LiquidGlassCard';
 import { HABIT_ICON_OPTIONS } from './habitIcons';
@@ -850,8 +850,7 @@ const styles = StyleSheet.create({
   },
   sheetTitle: {
     fontSize: 18,
-    fontWeight: '700',
-    letterSpacing: -0.3,
+    ...typography.cardTitle,
   },
   sheetSub: {
     fontSize: 12,

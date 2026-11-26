@@ -1,7 +1,7 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { CheckCircle2, Flame, Shield, TrendingUp, Trophy } from '../../components/icons';
-import { radii, spacing } from '../../theme/tokens';
+import { radii, spacing, typography } from '../../theme/tokens';
 import { useTheme } from '../../theme/ThemeContext';
 import { LiquidGlassCard } from '../../components/glass/LiquidGlassCard';
 import type { HabitConsoleAnalytics, RestShieldStats } from './streakEngine';
@@ -156,9 +156,8 @@ const styles = StyleSheet.create({
   },
   kpiValue: {
     fontSize: 24,
-    fontWeight: '700',
     fontVariant: ['tabular-nums'],
-    letterSpacing: -0.6,
+    ...typography.kpiValue,
   },
   dualValueRow: {
     flexDirection: 'row',

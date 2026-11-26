@@ -14,6 +14,7 @@ import {
   createLocalId,
   getTodayDateKey,
   notifyDatabaseChanged,
+  rankNotePagesInMemory,
   subscribeDatabaseChanges,
   type LocalDatabaseEngine,
 } from './seedData';
@@ -75,6 +76,22 @@ function normalizeHabitLogRecord(raw: HabitLogRecord): HabitLogRecord {
   };
 }
 
+function normalizeTaskRecord(raw: TaskRecord): TaskRecord {
+  return {
+    ...raw,
+    sourcePageId: raw.sourcePageId ?? null,
+    sourceBlockId: raw.sourceBlockId ?? null,
+  };
+}
+
+function normalizeNotePageRecord(raw: NotePageRecord): NotePageRecord {
+  return {
+    ...raw,
+    blocksJson: raw.blocksJson ?? null,
+    sortOrder: raw.sortOrder ?? 0,
+  };
+}
+
 function loadWebStateFromStorage(): void {
   if (typeof window === 'undefined' || !window.localStorage) {
     return;
@@ -94,13 +111,23 @@ function loadWebStateFromStorage(): void {
       normalizedLogs[id] = normalizeHabitLogRecord(item);
     }
 
+    const normalizedTasks: Record<string, TaskRecord> = {};
+    for (const [id, item] of Object.entries(parsed.tasks ?? {})) {
+      normalizedTasks[id] = normalizeTaskRecord(item);
+    }
+
+    const normalizedNotes: Record<string, NotePageRecord> = {};
+    for (const [id, item] of Object.entries(parsed.notePages ?? {})) {
+      normalizedNotes[id] = normalizeNotePageRecord(item);
+    }
+
     memoryState = {
-      tasks: parsed.tasks ?? {},
+      tasks: normalizedTasks,
       habits: normalizedHabits,
       habitLogs: normalizedLogs,
       habitRewards: parsed.habitRewards ?? {},
       workBlocks: parsed.workBlocks ?? {},
-      notePages: parsed.notePages ?? {},
+      notePages: normalizedNotes,
       syncMeta: parsed.syncMeta ?? {},
     };
   } catch {
@@ -269,25 +296,39 @@ export const localStore: LocalDatabaseEngine = {
   getNotePages(): NotePageRecord[] {
     return Object.values(memoryState.notePages)
       .filter((p) => !p.deletedAt)
+      .map(normalizeNotePageRecord)
       .sort((a, b) => {
         if (a.isPinned !== b.isPinned) return a.isPinned ? -1 : 1;
+        if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
         return b.updatedAt - a.updatedAt;
       });
   },
 
+  getDeletedNotePages(): NotePageRecord[] {
+    return Object.values(memoryState.notePages)
+      .filter((p) => Boolean(p.deletedAt))
+      .map(normalizeNotePageRecord)
+      .sort((a, b) => (b.deletedAt ?? 0) - (a.deletedAt ?? 0));
+  },
+
   getNotePageById(id: string): NotePageRecord | undefined {
-    return memoryState.notePages[id];
+    const found = memoryState.notePages[id];
+    return found ? normalizeNotePageRecord(found) : undefined;
+  },
+
+  searchNotePages(query: string, limit = 20): NotePageRecord[] {
+    return rankNotePagesInMemory(this.getNotePages(), query, limit);
   },
 
   upsertNotePage(record: NotePageRecord): void {
-    memoryState.notePages[record.id] = { ...record };
+    memoryState.notePages[record.id] = normalizeNotePageRecord({ ...record });
     persistWebStateToStorage();
   },
 
   updateNotePage(id: string, patch: Partial<NotePageRecord>): void {
     const existing = memoryState.notePages[id];
     if (!existing) return;
-    memoryState.notePages[id] = { ...existing, ...patch };
+    memoryState.notePages[id] = normalizeNotePageRecord({ ...existing, ...patch });
     persistWebStateToStorage();
   },
 
@@ -364,7 +405,10 @@ export const localStore: LocalDatabaseEngine = {
     for (const remoteTask of response.changes.tasks ?? []) {
       const localRow = memoryState.tasks[remoteTask.id];
       if (!localRow || remoteTask.updatedAt >= localRow.updatedAt) {
-        memoryState.tasks[remoteTask.id] = { ...remoteTask, isDirty: false };
+        memoryState.tasks[remoteTask.id] = normalizeTaskRecord({
+          ...remoteTask,
+          isDirty: false,
+        });
       }
     }
     for (const remoteHabit of response.changes.habits ?? []) {
@@ -403,7 +447,10 @@ export const localStore: LocalDatabaseEngine = {
     for (const remoteNote of response.changes.notePages ?? []) {
       const localRow = memoryState.notePages[remoteNote.id];
       if (!localRow || remoteNote.updatedAt >= localRow.updatedAt) {
-        memoryState.notePages[remoteNote.id] = { ...remoteNote, isDirty: false };
+        memoryState.notePages[remoteNote.id] = normalizeNotePageRecord({
+          ...remoteNote,
+          isDirty: false,
+        });
       }
     }
 

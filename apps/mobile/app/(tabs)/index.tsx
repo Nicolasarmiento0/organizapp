@@ -31,7 +31,7 @@ import {
   User,
   X,
 } from '../../src/components/icons';
-import { iconMetrics, radii, spacing, type MacModuleType } from '../../src/theme/tokens';
+import { iconMetrics, radii, spacing, typography, type MacModuleType } from '../../src/theme/tokens';
 import { useTheme } from '../../src/theme/ThemeContext';
 import { LiquidGlassCard } from '../../src/components/glass/LiquidGlassCard';
 import { MacIconBadge } from '../../src/components/glass/MacIconBadge';
@@ -46,6 +46,12 @@ import {
   BinaryHabitDayPickerModal,
   resolveBadgeIcon,
 } from '../../src/features/habits';
+import {
+  insertNotePageOfflineFirst,
+  instantiateNoteTemplate,
+  resolveNoteIcon,
+  type NoteTemplateId,
+} from '../../src/features/notes';
 import {
   subscribeSyncStatus,
   syncWithCloudflareD1,
@@ -1077,6 +1083,9 @@ export default function DashboardBentoScreen() {
                 {activityFilter !== 'calendar'
                   ? pendingTasks.slice(0, 3).map((task) => {
                       const clock = formatAlertClock(task.reminderAt);
+                      const sourceNote = task.sourcePageId
+                        ? notes.find((p) => p.id === task.sourcePageId)
+                        : undefined;
                       return (
                         <View
                           key={task.id}
@@ -1151,15 +1160,38 @@ export default function DashboardBentoScreen() {
                             </Text>
                           </Pressable>
 
-                          <Text
-                            style={[
-                              styles.activityTileMeta,
-                              { color: theme.textSecondary },
-                            ]}
-                            numberOfLines={1}
-                          >
-                            {task.notes || 'Recordatorio activo'}
-                          </Text>
+                          {sourceNote ? (
+                            <Pressable
+                              onPress={() =>
+                                router.push({
+                                  pathname: '/(tabs)/notes',
+                                  params: { pageId: sourceNote.id },
+                                })
+                              }
+                              style={styles.noteOriginLink}
+                            >
+                              <FileText size={11} color={theme.accentPrimaryLink} />
+                              <Text
+                                style={[
+                                  styles.activityTileMeta,
+                                  { color: theme.accentPrimaryLink },
+                                ]}
+                                numberOfLines={1}
+                              >
+                                Nota: {sourceNote.title}
+                              </Text>
+                            </Pressable>
+                          ) : (
+                            <Text
+                              style={[
+                                styles.activityTileMeta,
+                                { color: theme.textSecondary },
+                              ]}
+                              numberOfLines={1}
+                            >
+                              {task.notes || 'Recordatorio activo'}
+                            </Text>
+                          )}
                         </View>
                       );
                     })
@@ -1256,10 +1288,16 @@ export default function DashboardBentoScreen() {
                 {notes.slice(0, 3).map((page) => {
                   const preview = stripMarkdownPreview(page.contentMarkdown);
                   const tagLabel = parseFirstTag(page.tags);
+                  const NoteIcon = resolveNoteIcon(page.icon);
                   return (
                     <Pressable
                       key={page.id}
-                      onPress={() => router.push('/(tabs)/notes')}
+                      onPress={() =>
+                        router.push({
+                          pathname: '/(tabs)/notes',
+                          params: { pageId: page.id },
+                        })
+                      }
                       style={({ pressed }) => [
                         styles.noteRowCard,
                         {
@@ -1269,12 +1307,20 @@ export default function DashboardBentoScreen() {
                         pressed && { opacity: 0.84 },
                       ]}
                     >
+                      <View
+                        style={[
+                          styles.noteRowIconBox,
+                          { backgroundColor: theme.pillBg },
+                        ]}
+                      >
+                        <NoteIcon size={15} color={theme.accentPrimaryLink} />
+                      </View>
                       <View style={styles.noteRowMain}>
                         <View style={styles.noteTitleRow}>
                           {page.isPinned ? (
                             <Pin
                               size={12}
-                              color={theme.textSecondary}
+                              color={theme.accentPrimaryLink}
                               strokeWidth={2.2}
                             />
                           ) : null}
@@ -1308,6 +1354,54 @@ export default function DashboardBentoScreen() {
                     </Pressable>
                   );
                 })}
+              </View>
+
+              {/* Plantillas de 1 toque directamente desde Dashboard */}
+              <View style={styles.quickTemplatesRow}>
+                {(
+                  [
+                    { id: 'journaling_3min' as NoteTemplateId, label: 'Journaling 3m' },
+                    { id: 'weekly_review' as NoteTemplateId, label: 'Revisión Sem.' },
+                    { id: 'meeting_notes' as NoteTemplateId, label: 'Reunión' },
+                  ] as const
+                ).map((tpl) => (
+                  <Pressable
+                    key={tpl.id}
+                    onPress={() => {
+                      const data = instantiateNoteTemplate(tpl.id);
+                      const created = insertNotePageOfflineFirst({
+                        title: data.title,
+                        icon: data.icon,
+                        tags: data.tags,
+                        blocksJson: JSON.stringify(data.blocks),
+                        contentMarkdown: data.contentMarkdown,
+                        userId: activeUserId,
+                      });
+                      router.push({
+                        pathname: '/(tabs)/notes',
+                        params: { pageId: created.id },
+                      });
+                    }}
+                    style={({ pressed }) => [
+                      styles.quickTemplateChip,
+                      {
+                        backgroundColor: theme.pillBg,
+                        borderColor: theme.glassBorder,
+                        opacity: pressed ? 0.8 : 1,
+                      },
+                    ]}
+                  >
+                    <Plus size={11} color={theme.accentPrimaryLink} strokeWidth={2.2} />
+                    <Text
+                      style={[
+                        styles.quickTemplateText,
+                        { color: theme.textSecondary },
+                      ]}
+                    >
+                      {tpl.label}
+                    </Text>
+                  </Pressable>
+                ))}
               </View>
             </LiquidGlassCard>
           </View>
@@ -1349,8 +1443,7 @@ const styles = StyleSheet.create({
   },
   greetingTitle: {
     fontSize: 26,
-    fontWeight: '700',
-    letterSpacing: -0.6,
+    ...typography.screenTitle,
   },
   greetingSub: {
     fontSize: 13,
@@ -1506,8 +1599,7 @@ const styles = StyleSheet.create({
   },
   cardTitle: {
     fontSize: 17,
-    fontWeight: '700',
-    letterSpacing: -0.3,
+    ...typography.cardTitle,
   },
   cardSubtitle: {
     fontSize: 12,
@@ -1545,9 +1637,8 @@ const styles = StyleSheet.create({
   },
   kpiValue: {
     fontSize: 22,
-    fontWeight: '700',
     fontVariant: ['tabular-nums'],
-    letterSpacing: -0.5,
+    ...typography.kpiValue,
   },
   kpiMeta: {
     fontSize: 11,
@@ -1740,6 +1831,38 @@ const styles = StyleSheet.create({
   activityTileMeta: {
     fontSize: 11,
     fontWeight: '500',
+  },
+  noteOriginLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  noteRowIconBox: {
+    width: 30,
+    height: 30,
+    borderRadius: 9,
+    borderCurve: 'continuous',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  quickTemplatesRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: 2,
+  },
+  quickTemplateChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    borderRadius: radii.pill,
+    borderWidth: 1,
+  },
+  quickTemplateText: {
+    fontSize: 11,
+    fontWeight: '600',
   },
   reminderToggleRow: {
     flexDirection: 'row',

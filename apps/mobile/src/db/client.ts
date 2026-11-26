@@ -1,11 +1,12 @@
 import { openDatabaseSync } from 'expo-sqlite';
 import { drizzle } from 'drizzle-orm/expo-sqlite';
-import { and, asc, desc, eq, gte, isNull, lte } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, isNotNull, isNull, lte } from 'drizzle-orm';
 import * as schema from '@organiza/shared/schema';
 import {
   LOCAL_SQLITE_BOOTSTRAP_SQL,
   LOCAL_SQLITE_MIGRATION_V2_SQL,
   LOCAL_SQLITE_MIGRATION_V3_SQL,
+  LOCAL_SQLITE_MIGRATION_V4_SQL,
   tasks,
   habits,
   habitLogs,
@@ -26,8 +27,12 @@ import {
   buildDefaultRewardsSeed,
   buildInitialSeedDataset,
   createLocalId,
+  extractPlainTextFromBlocksJson,
   getTodayDateKey,
+  normalizeSearchText,
   notifyDatabaseChanged,
+  parseTagsText,
+  rankNotePagesInMemory,
   subscribeDatabaseChanges,
   type LocalDatabaseEngine,
 } from './seedData';
@@ -50,6 +55,39 @@ export const expoSqliteDb = openDatabaseSync(DATABASE_NAME, {
 });
 
 export const db = drizzle(expoSqliteDb, { schema });
+
+let isFtsReady = false;
+
+function syncNotePageFts(record: NotePageRecord | undefined): void {
+  if (!isFtsReady || !record) return;
+  try {
+    expoSqliteDb.runSync('DELETE FROM note_pages_fts WHERE page_id = ?;', [record.id]);
+    if (!record.deletedAt) {
+      const body = [
+        record.contentMarkdown ?? '',
+        extractPlainTextFromBlocksJson(record.blocksJson),
+      ]
+        .filter(Boolean)
+        .join('\n');
+      expoSqliteDb.runSync(
+        'INSERT INTO note_pages_fts(page_id, title, tags, body) VALUES (?, ?, ?, ?);',
+        [record.id, record.title ?? '', parseTagsText(record.tags), body]
+      );
+    }
+  } catch {
+    // FTS sync no bloquea el guardado instantáneo
+  }
+}
+
+function buildFtsMatchQuery(rawQuery: string): string | null {
+  const cleaned = normalizeSearchText(rawQuery)
+    .replace(/[^\p{L}\p{N}\s]+/gu, ' ')
+    .trim();
+  if (!cleaned) return null;
+  const tokens = cleaned.split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return null;
+  return tokens.map((tok) => `"${tok.replace(/"/g, '')}"*`).join(' AND ');
+}
 
 export const localStore: LocalDatabaseEngine = {
   getTasks(): TaskRecord[] {
@@ -205,7 +243,16 @@ export const localStore: LocalDatabaseEngine = {
       .select()
       .from(notePages)
       .where(isNull(notePages.deletedAt))
-      .orderBy(desc(notePages.isPinned), desc(notePages.updatedAt))
+      .orderBy(desc(notePages.isPinned), asc(notePages.sortOrder), desc(notePages.updatedAt))
+      .all();
+  },
+
+  getDeletedNotePages(): NotePageRecord[] {
+    return db
+      .select()
+      .from(notePages)
+      .where(isNotNull(notePages.deletedAt))
+      .orderBy(desc(notePages.deletedAt))
       .all();
   },
 
@@ -213,15 +260,46 @@ export const localStore: LocalDatabaseEngine = {
     return db.select().from(notePages).where(eq(notePages.id, id)).get();
   },
 
+  searchNotePages(query: string, limit = 20): NotePageRecord[] {
+    const ftsQuery = buildFtsMatchQuery(query);
+    if (!ftsQuery) {
+      return this.getNotePages().slice(0, limit);
+    }
+
+    if (isFtsReady) {
+      try {
+        const rows = expoSqliteDb.getAllSync<{ page_id: string }>(
+          'SELECT page_id FROM note_pages_fts WHERE note_pages_fts MATCH ? ORDER BY bm25(note_pages_fts, 10.0, 4.0, 1.0) LIMIT ?;',
+          [ftsQuery, limit]
+        );
+        if (rows.length > 0) {
+          const allActive = new Map(this.getNotePages().map((p) => [p.id, p]));
+          const ordered: NotePageRecord[] = [];
+          for (const row of rows) {
+            const match = allActive.get(row.page_id);
+            if (match) ordered.push(match);
+          }
+          if (ordered.length > 0) return ordered;
+        }
+      } catch {
+        // Fallback automático a búsqueda normalizada en memoria
+      }
+    }
+
+    return rankNotePagesInMemory(this.getNotePages(), query, limit);
+  },
+
   upsertNotePage(record: NotePageRecord): void {
     db.insert(notePages)
       .values(record)
       .onConflictDoUpdate({ target: notePages.id, set: record })
       .run();
+    syncNotePageFts(record);
   },
 
   updateNotePage(id: string, patch: Partial<NotePageRecord>): void {
     db.update(notePages).set(patch).where(eq(notePages.id, id)).run();
+    syncNotePageFts(this.getNotePageById(id));
   },
 
   getSyncMeta(key: string): string | null {
@@ -410,16 +488,27 @@ export function initializeLocalDatabase(defaultUserId = 'local-user'): void {
     expoSqliteDb.execSync(sqlStatement);
   }
 
-  // Migración idempotente V2/V3 para bases locales existentes
+  // Migración idempotente V2/V3/V4 para bases locales existentes
   for (const migrationSql of [
     ...LOCAL_SQLITE_MIGRATION_V2_SQL,
     ...LOCAL_SQLITE_MIGRATION_V3_SQL,
+    ...LOCAL_SQLITE_MIGRATION_V4_SQL,
   ]) {
     try {
       expoSqliteDb.execSync(migrationSql);
     } catch {
       // La columna o tabla ya existe
     }
+  }
+
+  // Tabla virtual SQLite FTS5 para búsqueda instantánea offline de notas
+  try {
+    expoSqliteDb.execSync(
+      `CREATE VIRTUAL TABLE IF NOT EXISTS note_pages_fts USING fts5(page_id UNINDEXED, title, tags, body, tokenize='unicode61 remove_diacritics 2');`
+    );
+    isFtsReady = true;
+  } catch {
+    isFtsReady = false;
   }
 
   if (!localStore.getSyncMeta('initial_seed_v1')) {
@@ -444,6 +533,22 @@ export function initializeLocalDatabase(defaultUserId = 'local-user'): void {
       });
     } else {
       localStore.setSyncMeta('initial_rewards_v2', 'completed');
+    }
+  }
+
+  if (isFtsReady) {
+    try {
+      const ftsCountRow = expoSqliteDb.getFirstSync<{ cnt: number }>(
+        'SELECT count(*) AS cnt FROM note_pages_fts;'
+      );
+      const activeNotes = localStore.getNotePages();
+      if ((ftsCountRow?.cnt ?? 0) === 0 && activeNotes.length > 0) {
+        expoSqliteDb.withTransactionSync(() => {
+          for (const page of activeNotes) syncNotePageFts(page);
+        });
+      }
+    } catch {
+      // Ignorar si FTS backfill falla
     }
   }
 

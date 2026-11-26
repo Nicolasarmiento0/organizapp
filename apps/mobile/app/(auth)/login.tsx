@@ -23,7 +23,7 @@ import {
   Sun,
   User,
 } from '../../src/components/icons';
-import { iconMetrics, radii, spacing } from '../../src/theme/tokens';
+import { iconMetrics, radii, spacing, typography } from '../../src/theme/tokens';
 import { useTheme } from '../../src/theme/ThemeContext';
 import { LiquidGlassCard } from '../../src/components/glass/LiquidGlassCard';
 import {
@@ -578,9 +578,8 @@ const styles = StyleSheet.create({
   },
   heroTitle: {
     fontSize: 26,
-    fontWeight: '700',
-    letterSpacing: -0.6,
     lineHeight: 32,
+    ...typography.docTitle,
   },
   heroSubtitle: {
     fontSize: 14,

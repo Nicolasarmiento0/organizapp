@@ -1,4 +1,4 @@
-import { Platform, type ViewStyle } from 'react-native';
+import { Platform, type TextStyle, type ViewStyle } from 'react-native';
 
 /**
  * SISTEMA DE DISEÑO DUAL: "TITANIUM MONOCHROME + CORAL RED (#FA6B6B)"
@@ -309,6 +309,50 @@ export const spacing = {
   xxxl: 40,
 } as const;
 
+export const fontFamilies = {
+  displayMedium: 'PlusJakartaSans_500Medium',
+  displaySemiBold: 'PlusJakartaSans_600SemiBold',
+  displayBold: 'PlusJakartaSans_700Bold',
+} as const;
+
+/**
+ * Tipografía hegemónica para títulos, encabezados H1–H3, eyebrows y KPIs.
+ * Usa pesos explícitos de Plus Jakarta Sans sin `fontWeight` conflictivo.
+ */
+export const typography: Record<
+  'screenTitle' | 'docTitle' | 'cardTitle' | 'heading2' | 'heading3' | 'kpiValue' | 'eyebrow',
+  TextStyle
+> = {
+  screenTitle: {
+    fontFamily: fontFamilies.displaySemiBold,
+    letterSpacing: -0.45,
+  },
+  docTitle: {
+    fontFamily: fontFamilies.displayBold,
+    letterSpacing: -0.55,
+  },
+  cardTitle: {
+    fontFamily: fontFamilies.displaySemiBold,
+    letterSpacing: -0.25,
+  },
+  heading2: {
+    fontFamily: fontFamilies.displaySemiBold,
+    letterSpacing: -0.3,
+  },
+  heading3: {
+    fontFamily: fontFamilies.displaySemiBold,
+    letterSpacing: -0.15,
+  },
+  kpiValue: {
+    fontFamily: fontFamilies.displayBold,
+    letterSpacing: -0.5,
+  },
+  eyebrow: {
+    fontFamily: fontFamilies.displayMedium,
+    letterSpacing: 1.15,
+  },
+};
+
 export const iconMetrics = {
   strokeWidth: 1.75,
   defaultSize: 20,
@@ -377,6 +421,8 @@ export const tokens = {
   macModuleColors,
   radii,
   spacing,
+  fontFamilies,
+  typography,
   iconMetrics,
   shadows,
 } as const;

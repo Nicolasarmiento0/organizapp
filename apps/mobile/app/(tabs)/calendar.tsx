@@ -17,7 +17,7 @@ import {
   Zap,
 } from '../../src/components/icons';
 import type { WorkBlockType } from '@organiza/shared/schema';
-import { iconMetrics, radii, spacing } from '../../src/theme/tokens';
+import { iconMetrics, radii, spacing, typography } from '../../src/theme/tokens';
 import { useTheme } from '../../src/theme/ThemeContext';
 import { LiquidGlassCard } from '../../src/components/glass/LiquidGlassCard';
 import { MacIconBadge } from '../../src/components/glass/MacIconBadge';
@@ -375,13 +375,11 @@ const styles = StyleSheet.create({
   },
   phaseTag: {
     fontSize: 10,
-    fontWeight: '700',
-    letterSpacing: 0.9,
+    ...typography.eyebrow,
   },
   screenTitle: {
     fontSize: 24,
-    fontWeight: '700',
-    letterSpacing: -0.5,
+    ...typography.screenTitle,
   },
   weekStrip: {
     gap: spacing.sm,
@@ -412,9 +410,8 @@ const styles = StyleSheet.create({
   },
   cardSectionTitle: {
     fontSize: 12,
-    fontWeight: '700',
     textTransform: 'uppercase',
-    letterSpacing: 0.5,
+    ...typography.eyebrow,
   },
   input: {
     borderWidth: 1,

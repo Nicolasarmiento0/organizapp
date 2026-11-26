@@ -18,7 +18,7 @@ import {
   Sun,
   X,
 } from '../icons';
-import { iconMetrics, radii, shadows, spacing } from '../../theme/tokens';
+import { iconMetrics, radii, shadows, spacing, typography } from '../../theme/tokens';
 import { useTheme } from '../../theme/ThemeContext';
 import { LiquidGlassCard } from '../glass/LiquidGlassCard';
 import {
@@ -386,8 +386,7 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     fontSize: 17,
-    fontWeight: '700',
-    letterSpacing: -0.3,
+    ...typography.cardTitle,
   },
   closeButton: {
     width: 32,

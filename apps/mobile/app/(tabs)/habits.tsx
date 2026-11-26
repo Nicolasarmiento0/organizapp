@@ -10,7 +10,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { HabitRecord, HabitTimeOfDay } from '@organiza/shared/schema';
 import { Flame, Plus, Shield } from '../../src/components/icons';
-import { radii, spacing } from '../../src/theme/tokens';
+import { radii, spacing, typography } from '../../src/theme/tokens';
 import { useTheme } from '../../src/theme/ThemeContext';
 import { LiquidGlassCard } from '../../src/components/glass/LiquidGlassCard';
 import { MacIconBadge } from '../../src/components/glass/MacIconBadge';
@@ -426,13 +426,11 @@ const styles = StyleSheet.create({
   },
   overline: {
     fontSize: 10,
-    fontWeight: '700',
-    letterSpacing: 0.9,
+    ...typography.eyebrow,
   },
   screenTitle: {
     fontSize: 24,
-    fontWeight: '700',
-    letterSpacing: -0.5,
+    ...typography.screenTitle,
   },
   shieldPill: {
     flexDirection: 'row',
@@ -487,8 +485,7 @@ const styles = StyleSheet.create({
   },
   panelTitle: {
     fontSize: 17,
-    fontWeight: '700',
-    letterSpacing: -0.3,
+    ...typography.cardTitle,
   },
   panelSub: {
     fontSize: 12,

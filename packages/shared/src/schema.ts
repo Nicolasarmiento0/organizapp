@@ -85,6 +85,8 @@ export const tasks = sqliteTable(
     dueDate: text('due_date'), // Formato YYYY-MM-DD
     reminderAt: integer('reminder_at'), // Epoch ms para expo-notifications
     notificationId: text('notification_id'), // Identificador local de expo-notifications
+    sourcePageId: text('source_page_id'), // Enlace opcional a la nota de origen (Paso 4)
+    sourceBlockId: text('source_block_id'), // Bloque origen en la nota (Paso 4)
     isDirty: integer('is_dirty', { mode: 'boolean' }).notNull().default(true),
     deletedAt: integer('deleted_at'),
     createdAt: integer('created_at').notNull(),
@@ -225,8 +227,10 @@ export const notePages = sqliteTable(
     title: text('title').notNull(),
     icon: text('icon').notNull().default('FileText'),
     contentMarkdown: text('content_markdown').notNull().default(''),
+    blocksJson: text('blocks_json'),
     tags: text('tags').notNull().default('[]'),
     isPinned: integer('is_pinned', { mode: 'boolean' }).notNull().default(false),
+    sortOrder: integer('sort_order').notNull().default(0),
     isDirty: integer('is_dirty', { mode: 'boolean' }).notNull().default(true),
     deletedAt: integer('deleted_at'),
     createdAt: integer('created_at').notNull(),
@@ -235,6 +239,7 @@ export const notePages = sqliteTable(
   (table) => [
     index('idx_note_pages_user_updated').on(table.userId, table.updatedAt),
     index('idx_note_pages_dirty').on(table.isDirty),
+    index('idx_note_pages_parent').on(table.parentId),
   ]
 );
 
@@ -310,6 +315,8 @@ export const LOCAL_SQLITE_BOOTSTRAP_SQL: readonly string[] = [
     due_date TEXT,
     reminder_at INTEGER,
     notification_id TEXT,
+    source_page_id TEXT,
+    source_block_id TEXT,
     is_dirty INTEGER NOT NULL DEFAULT 1,
     deleted_at INTEGER,
     created_at INTEGER NOT NULL,
@@ -403,8 +410,10 @@ export const LOCAL_SQLITE_BOOTSTRAP_SQL: readonly string[] = [
     title TEXT NOT NULL,
     icon TEXT NOT NULL DEFAULT 'FileText',
     content_markdown TEXT NOT NULL DEFAULT '',
+    blocks_json TEXT,
     tags TEXT NOT NULL DEFAULT '[]',
     is_pinned INTEGER NOT NULL DEFAULT 0,
+    sort_order INTEGER NOT NULL DEFAULT 0,
     is_dirty INTEGER NOT NULL DEFAULT 1,
     deleted_at INTEGER,
     created_at INTEGER NOT NULL,
@@ -412,6 +421,7 @@ export const LOCAL_SQLITE_BOOTSTRAP_SQL: readonly string[] = [
   );`,
   `CREATE INDEX IF NOT EXISTS idx_note_pages_user_updated ON note_pages(user_id, updated_at);`,
   `CREATE INDEX IF NOT EXISTS idx_note_pages_dirty ON note_pages(is_dirty);`,
+  `CREATE INDEX IF NOT EXISTS idx_note_pages_parent ON note_pages(parent_id);`,
 
   `CREATE TABLE IF NOT EXISTS sync_meta (
     key TEXT PRIMARY KEY NOT NULL,
@@ -456,4 +466,15 @@ export const LOCAL_SQLITE_MIGRATION_V2_SQL: readonly string[] = [
  */
 export const LOCAL_SQLITE_MIGRATION_V3_SQL: readonly string[] = [
   `ALTER TABLE habits ADD COLUMN weekly_goal INTEGER;`,
+];
+
+/**
+ * Sentencias de migración incremental V4 (Notas Notion + Obsidian: blocksJson, orden, enlaces Nota->Tarea).
+ */
+export const LOCAL_SQLITE_MIGRATION_V4_SQL: readonly string[] = [
+  `ALTER TABLE tasks ADD COLUMN source_page_id TEXT;`,
+  `ALTER TABLE tasks ADD COLUMN source_block_id TEXT;`,
+  `ALTER TABLE note_pages ADD COLUMN blocks_json TEXT;`,
+  `ALTER TABLE note_pages ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0;`,
+  `CREATE INDEX IF NOT EXISTS idx_note_pages_parent ON note_pages(parent_id);`,
 ];

@@ -41,6 +41,98 @@ export function notifyDatabaseChanged(): void {
   }
 }
 
+export function normalizeSearchText(input: string): string {
+  return input
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+}
+
+export function extractPlainTextFromBlocksJson(blocksJson?: string | null): string {
+  if (!blocksJson) return '';
+  try {
+    const parsed = JSON.parse(blocksJson) as unknown;
+    if (!Array.isArray(parsed)) return '';
+    return parsed
+      .map((item) => {
+        if (!item || typeof item !== 'object') return '';
+        const rec = item as Record<string, unknown>;
+        const chunks: string[] = [];
+        if (typeof rec.text === 'string') chunks.push(rec.text);
+        if (typeof rec.content === 'string') chunks.push(rec.content);
+        if (typeof rec.caption === 'string') chunks.push(rec.caption);
+        return chunks.join(' ');
+      })
+      .filter(Boolean)
+      .join('\n');
+  } catch {
+    return '';
+  }
+}
+
+export function parseTagsText(tagsJson?: string | null): string {
+  if (!tagsJson) return '';
+  try {
+    const parsed = JSON.parse(tagsJson) as unknown;
+    return Array.isArray(parsed)
+      ? parsed.filter((t): t is string => typeof t === 'string').join(' ')
+      : '';
+  } catch {
+    return '';
+  }
+}
+
+export function rankNotePagesInMemory(
+  pages: NotePageRecord[],
+  rawQuery: string,
+  limit = 20
+): NotePageRecord[] {
+  const normalizedQuery = normalizeSearchText(rawQuery);
+  if (!normalizedQuery) {
+    return pages.slice(0, limit);
+  }
+  const tokens = normalizedQuery.split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) {
+    return pages.slice(0, limit);
+  }
+
+  const scored: Array<{ page: NotePageRecord; score: number }> = [];
+  for (const page of pages) {
+    if (page.deletedAt) continue;
+    const titleNorm = normalizeSearchText(page.title);
+    const tagsNorm = normalizeSearchText(parseTagsText(page.tags));
+    const bodyNorm = normalizeSearchText(
+      `${page.contentMarkdown}\n${extractPlainTextFromBlocksJson(page.blocksJson)}`
+    );
+
+    const allMatch = tokens.every(
+      (tok) =>
+        titleNorm.includes(tok) || tagsNorm.includes(tok) || bodyNorm.includes(tok)
+    );
+    if (!allMatch) continue;
+
+    let score = page.isPinned ? 8 : 0;
+    if (titleNorm === normalizedQuery) score += 200;
+    else if (titleNorm.startsWith(normalizedQuery)) score += 120;
+    else if (titleNorm.includes(normalizedQuery)) score += 80;
+
+    for (const tok of tokens) {
+      if (titleNorm.includes(tok)) score += 30;
+      if (tagsNorm.includes(tok)) score += 15;
+      if (bodyNorm.includes(tok)) score += 5;
+    }
+    scored.push({ page, score });
+  }
+
+  scored.sort((a, b) => {
+    if (a.score !== b.score) return b.score - a.score;
+    return b.page.updatedAt - a.page.updatedAt;
+  });
+
+  return scored.slice(0, limit).map((entry) => entry.page);
+}
+
 export interface LocalDatabaseEngine {
   getTasks(): TaskRecord[];
   getTaskById(id: string): TaskRecord | undefined;
@@ -69,7 +161,9 @@ export interface LocalDatabaseEngine {
   updateWorkBlock(id: string, patch: Partial<WorkBlockRecord>): void;
 
   getNotePages(): NotePageRecord[];
+  getDeletedNotePages(): NotePageRecord[];
   getNotePageById(id: string): NotePageRecord | undefined;
+  searchNotePages(query: string, limit?: number): NotePageRecord[];
   upsertNotePage(record: NotePageRecord): void;
   updateNotePage(id: string, patch: Partial<NotePageRecord>): void;
 
@@ -139,6 +233,7 @@ export function buildInitialSeedDataset(userId: string): SyncChangeset {
   const habitWaterId = createLocalId();
   const habitTrainingId = createLocalId();
   const habitReadingId = createLocalId();
+  const projectsNoteId = createLocalId();
 
   return {
     habits: [
@@ -275,6 +370,8 @@ export function buildInitialSeedDataset(userId: string): SyncChangeset {
         dueDate: todayKey,
         reminderAt: oneHourFromNow,
         notificationId: null,
+        sourcePageId: null,
+        sourceBlockId: null,
         isDirty: true,
         deletedAt: null,
         createdAt: now,
@@ -292,6 +389,8 @@ export function buildInitialSeedDataset(userId: string): SyncChangeset {
         dueDate: todayKey,
         reminderAt: null,
         notificationId: null,
+        sourcePageId: null,
+        sourceBlockId: null,
         isDirty: true,
         deletedAt: null,
         createdAt: now - 120000,
@@ -309,6 +408,8 @@ export function buildInitialSeedDataset(userId: string): SyncChangeset {
         dueDate: todayKey,
         reminderAt: null,
         notificationId: null,
+        sourcePageId: null,
+        sourceBlockId: null,
         isDirty: true,
         deletedAt: null,
         createdAt: now - 7200000,
@@ -373,26 +474,46 @@ export function buildInitialSeedDataset(userId: string): SyncChangeset {
         title: 'Manifiesto de Productividad & Sistema Operativo Personal',
         icon: 'Compass',
         contentMarkdown: `# Sistema Operativo Personal\n\nBienvenido a **Organiza-App** (Web, iOS y Android). Todo lo que escribes aquí se guarda en \`0 ms\` de forma local.\n\n## Principios Clave\n- **Offline-First Estricto:** Cero spinners de red.\n- **Multiplataforma:** Funciona en Web, iOS y Android con la misma base de código.\n- **Sincronización Transparente:** Respaldo automático en Cloudflare D1.`,
+        blocksJson: null,
         tags: JSON.stringify(['Sistema', 'Arquitectura']),
         isPinned: true,
+        sortOrder: 0,
         isDirty: true,
         deletedAt: null,
         createdAt: now,
         updatedAt: now,
       },
       {
-        id: createLocalId(),
+        id: projectsNoteId,
         userId,
         parentId: null,
         title: 'Bitácora de Ideas & Proyectos Q4',
         icon: 'Sparkles',
         contentMarkdown: `# Ideas & Backlog\n\n- [x] Motor SQLite local con modo WAL en iOS/Android y persistencia Web en 0 ms\n- [x] Diseño Titanium Monochrome\n- [ ] Automatizar revisión semanal de domingos`,
+        blocksJson: null,
         tags: JSON.stringify(['Roadmap', 'Notas']),
         isPinned: false,
+        sortOrder: 1,
         isDirty: true,
         deletedAt: null,
         createdAt: now - 60000,
         updatedAt: now - 60000,
+      },
+      {
+        id: createLocalId(),
+        userId,
+        parentId: projectsNoteId,
+        title: 'Arquitectura UI & Flujo de Notas',
+        icon: 'Layers',
+        contentMarkdown: `# Subpágina: Arquitectura UI\n\nEjemplo de jerarquía anidada estilo Notion + Obsidian.\n\n- Breadcrumbs interactivos en la parte superior\n- Búsqueda Spotlight offline con SQLite FTS5\n- Editor híbrido por bloques listo para el siguiente paso`,
+        blocksJson: null,
+        tags: JSON.stringify(['UI', 'Subpágina']),
+        isPinned: false,
+        sortOrder: 0,
+        isDirty: true,
+        deletedAt: null,
+        createdAt: now - 120000,
+        updatedAt: now - 120000,
       },
     ],
   };

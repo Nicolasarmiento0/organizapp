@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { ArrowRight, ChevronLeft, ChevronRight } from '../../components/icons';
-import { radii, spacing } from '../../theme/tokens';
+import { radii, spacing, typography } from '../../theme/tokens';
 import { useTheme } from '../../theme/ThemeContext';
 import { LiquidGlassCard } from '../../components/glass/LiquidGlassCard';
 import type { CalendarMonthRef } from './useDashboardData';
@@ -254,8 +254,7 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 17,
-    fontWeight: '700',
-    letterSpacing: -0.3,
+    ...typography.cardTitle,
   },
   monthText: {
     fontSize: 12,

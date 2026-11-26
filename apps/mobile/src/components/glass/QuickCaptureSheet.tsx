@@ -24,6 +24,7 @@ import {
   radii,
   shadows,
   spacing,
+  typography,
   type MacModuleType,
 } from '../../theme/tokens';
 import { useTheme } from '../../theme/ThemeContext';
@@ -470,8 +471,7 @@ const styles = StyleSheet.create({
   },
   sheetTitle: {
     fontSize: 17,
-    fontWeight: '700',
-    letterSpacing: -0.3,
+    ...typography.cardTitle,
   },
   sheetSubtitle: {
     fontSize: 12,

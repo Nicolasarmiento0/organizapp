@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@better-auth/expo": "^1.2.5",
+    "@expo-google-fonts/plus-jakarta-sans": "^0.4.2",
     "@expo/metro-runtime": "~4.0.1",
     "@organiza/shared": "*",
     "@solar-icons/react-native": "^2.7.0",
@@ -21,7 +22,10 @@
     "expo-blur": "~14.0.3",
     "expo-constants": "~17.0.7",
     "expo-crypto": "~14.0.2",
+    "expo-font": "~13.0.4",
     "expo-haptics": "~14.0.1",
+    "expo-image-manipulator": "~13.0.6",
+    "expo-image-picker": "~16.0.6",
     "expo-linking": "~7.0.5",
     "expo-network": "~7.0.5",
     "expo-notifications": "~0.29.13",

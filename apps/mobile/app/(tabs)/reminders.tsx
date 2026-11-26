@@ -8,18 +8,21 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
 import {
   Bell,
   Check,
   CheckCircle2,
   Circle,
+  FileText,
   Plus,
   Trash2,
 } from '../../src/components/icons';
-import { iconMetrics, radii, spacing } from '../../src/theme/tokens';
+import { iconMetrics, radii, spacing, typography } from '../../src/theme/tokens';
 import { useTheme } from '../../src/theme/ThemeContext';
 import { LiquidGlassCard } from '../../src/components/glass/LiquidGlassCard';
 import { MacIconBadge } from '../../src/components/glass/MacIconBadge';
+import { localStore } from '../../src/db/client';
 import { useTodayCockpit } from '../../src/features/today';
 import { authClient, resolveActiveUserId } from '../../src/services/authClient';
 
@@ -39,6 +42,7 @@ function formatReminderClock(epochMs?: number | null): string | null {
 
 export default function RemindersScreen() {
   const { theme } = useTheme();
+  const router = useRouter();
   const { data: session } = authClient.useSession();
   const activeUserId = resolveActiveUserId(session?.user?.id);
   const { tasks, metrics, createTask, toggleTask, deleteTask } =
@@ -228,6 +232,9 @@ export default function RemindersScreen() {
           ) : (
             filteredTasks.map((task) => {
               const clock = formatReminderClock(task.reminderAt);
+              const sourcePage = task.sourcePageId
+                ? localStore.getNotePageById(task.sourcePageId)
+                : undefined;
               const priorityColor =
                 task.priority === 3
                   ? remindersPalette.icon
@@ -314,6 +321,34 @@ export default function RemindersScreen() {
                           </Text>
                         </View>
                       ) : null}
+                      {sourcePage && !sourcePage.deletedAt ? (
+                        <Pressable
+                          onPress={() =>
+                            router.push({
+                              pathname: '/(tabs)/notes',
+                              params: { pageId: sourcePage.id },
+                            })
+                          }
+                          style={[
+                            styles.noteOriginChip,
+                            {
+                              backgroundColor: theme.pillBg,
+                              borderColor: theme.glassBorder,
+                            },
+                          ]}
+                        >
+                          <FileText size={11} color={theme.accentPrimaryLink} />
+                          <Text
+                            style={[
+                              styles.noteOriginText,
+                              { color: theme.textSecondary },
+                            ]}
+                            numberOfLines={1}
+                          >
+                            {sourcePage.title}
+                          </Text>
+                        </Pressable>
+                      ) : null}
                     </View>
                   </Pressable>
 
@@ -361,13 +396,11 @@ const styles = StyleSheet.create({
   },
   overline: {
     fontSize: 10,
-    fontWeight: '700',
-    letterSpacing: 0.9,
+    ...typography.eyebrow,
   },
   screenTitle: {
     fontSize: 24,
-    fontWeight: '700',
-    letterSpacing: -0.5,
+    ...typography.screenTitle,
   },
   summaryPill: {
     flexDirection: 'row',
@@ -499,6 +532,20 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
   },
   clockChipText: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  noteOriginChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    maxWidth: 180,
+  },
+  noteOriginText: {
     fontSize: 11,
     fontWeight: '600',
   },

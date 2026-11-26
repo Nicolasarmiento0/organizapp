@@ -9,7 +9,7 @@ import {
 } from 'react-native';
 import type { HabitLogRecord, HabitRecord } from '@organiza/shared/schema';
 import { Shield } from '../../components/icons';
-import { radii, spacing } from '../../theme/tokens';
+import { radii, spacing, typography } from '../../theme/tokens';
 import { useTheme } from '../../theme/ThemeContext';
 import { LiquidGlassCard } from '../../components/glass/LiquidGlassCard';
 import {
@@ -505,8 +505,7 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 17,
-    fontWeight: '700',
-    letterSpacing: -0.3,
+    ...typography.cardTitle,
   },
   subtitle: {
     fontSize: 12,

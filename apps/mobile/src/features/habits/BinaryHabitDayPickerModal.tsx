@@ -8,7 +8,7 @@ import {
   View,
 } from 'react-native';
 import { Calendar, Check, Target, X } from '../../components/icons';
-import { iconMetrics, radii, shadows, spacing } from '../../theme/tokens';
+import { iconMetrics, radii, shadows, spacing, typography } from '../../theme/tokens';
 import { useTheme } from '../../theme/ThemeContext';
 import { LiquidGlassCard } from '../../components/glass/LiquidGlassCard';
 import { shiftDateKey } from './streakEngine';
@@ -295,8 +295,7 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 16,
-    fontWeight: '700',
-    letterSpacing: -0.3,
+    ...typography.cardTitle,
   },
   subtitle: {
     fontSize: 13,

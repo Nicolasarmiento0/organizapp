@@ -15,6 +15,12 @@ database_name = "organiza-app-db"
 database_id = "00000000-0000-0000-0000-000000000000"
 migrations_dir = "drizzle"
 
+# Almacenamiento de imágenes comprimidas WebP (Cloudflare R2 - Tier Gratuito $0)
+# Ejecuta `npx wrangler r2 bucket create organiza-app-media` antes de desplegar
+[[r2_buckets]]
+binding = "MEDIA_BUCKET"
+bucket_name = "organiza-app-media"
+
 [vars]
 BETTER_AUTH_URL = "http://localhost:8787"
 TRUSTED_ORIGINS = "organizaapp://,exp://,http://localhost:8081"
