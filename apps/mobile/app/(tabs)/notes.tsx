@@ -27,9 +27,11 @@ import {
   PanelLeft,
   Pin,
   Plus,
+  Redo,
   Search,
   Sparkles,
   Trash2,
+  Undo,
   X,
 } from '../../src/components/icons';
 import { fontFamilies, radii, spacing, typography } from '../../src/theme/tokens';
@@ -60,11 +62,19 @@ import {
   NoteTrashModal,
   resolveNoteIcon,
   serializeBlocksToMarkdown,
+  useNoteHistory,
   useNotesWorkspace,
   type NoteBlock,
   type NoteTemplateId,
 } from '../../src/features/notes';
 import { authClient, resolveActiveUserId } from '../../src/services/authClient';
+
+interface NoteToastState {
+  message: string;
+  actionLabel?: string;
+  onAction?: () => void;
+  variant?: 'task' | 'undo';
+}
 
 export default function NotesWorkspaceScreen() {
   const { width } = useWindowDimensions();
@@ -100,6 +110,14 @@ export default function NotesWorkspaceScreen() {
     searchPages,
   } = useNotesWorkspace(activeUserId);
 
+  const {
+    canUndo,
+    canRedo,
+    recordChange,
+    undo: popUndoSnapshot,
+    redo: popRedoSnapshot,
+  } = useNoteHistory(activePage?.id ?? null);
+
   const [draftTitle, setDraftTitle] = useState(
     activePage ? normalizeEditableNoteTitle(activePage.title) : ''
   );
@@ -116,7 +134,8 @@ export default function NotesWorkspaceScreen() {
   const [moveModalOpen, setMoveModalOpen] = useState(false);
   const [trashModalOpen, setTrashModalOpen] = useState(false);
   const [copiedMarkdown, setCopiedMarkdown] = useState(false);
-  const [toastText, setToastText] = useState<string | null>(null);
+  const [toastState, setToastState] = useState<NoteToastState | null>(null);
+  const toastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const titleInputRef = useRef<TextInput>(null);
   const lastAppliedParamPageIdRef = useRef<string | null>(null);
   const draftStateRef = useRef({
@@ -125,6 +144,38 @@ export default function NotesWorkspaceScreen() {
     draftBlocks: draftBlocks,
   });
   draftStateRef.current = { activePage, draftTitle, draftBlocks };
+
+  const anyModalOpen =
+    mobileDrawerOpen ||
+    spotlightOpen ||
+    templatesOpen ||
+    iconPickerOpen ||
+    moveModalOpen ||
+    trashModalOpen;
+
+  const historyActionsRef = useRef<{
+    recordChange: typeof recordChange;
+    undo: () => void;
+    redo: () => void;
+    canUndo: boolean;
+    canRedo: boolean;
+    anyModalOpen: boolean;
+  }>({
+    recordChange,
+    undo: () => {},
+    redo: () => {},
+    canUndo: false,
+    canRedo: false,
+    anyModalOpen: false,
+  });
+
+  useEffect(() => {
+    return () => {
+      if (toastTimeoutRef.current) {
+        clearTimeout(toastTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const notesPalette = theme.modules.notes;
   const headingContrastColor = isDark ? theme.textPrimary : '#0F1115';
@@ -242,6 +293,28 @@ export default function NotesWorkspaceScreen() {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
         event.preventDefault();
         setSpotlightOpen((prev) => !prev);
+        return;
+      }
+
+      const actions = historyActionsRef.current;
+      if (actions.anyModalOpen) return;
+
+      const key = event.key.toLowerCase();
+      if ((event.metaKey || event.ctrlKey) && !event.altKey && key === 'z') {
+        if (event.shiftKey) {
+          if (actions.canRedo) {
+            event.preventDefault();
+            actions.redo();
+          }
+        } else if (actions.canUndo) {
+          event.preventDefault();
+          actions.undo();
+        }
+      } else if (event.ctrlKey && !event.metaKey && !event.altKey && key === 'y') {
+        if (actions.canRedo) {
+          event.preventDefault();
+          actions.redo();
+        }
       }
     };
 
@@ -270,6 +343,11 @@ export default function NotesWorkspaceScreen() {
         const cur = draftStateRef.current;
         if (cur.activePage?.id !== targetPageId) return;
         const withImg = [...cur.draftBlocks, imgBlock];
+        historyActionsRef.current.recordChange(
+          targetPageId,
+          { title: cur.draftTitle, blocks: cur.draftBlocks },
+          { title: cur.draftTitle, blocks: withImg }
+        );
         setDraftBlocks(withImg);
         updatePageBlocks(targetPageId, cur.draftTitle, withImg);
 
@@ -323,32 +401,200 @@ export default function NotesWorkspaceScreen() {
     [draftBlocks]
   );
 
-  const showToast = (message: string) => {
-    setToastText(message);
-    setTimeout(() => {
-      setToastText((prev) => (prev === message ? null : prev));
-    }, 2400);
+  const showToast = (next: NoteToastState, durationMs = 2600) => {
+    if (toastTimeoutRef.current) {
+      clearTimeout(toastTimeoutRef.current);
+    }
+    setToastState(next);
+    toastTimeoutRef.current = setTimeout(() => {
+      setToastState((prev) => (prev === next ? null : prev));
+      toastTimeoutRef.current = null;
+    }, durationMs);
+  };
+
+  const handleUndo = () => {
+    const {
+      activePage: curPage,
+      draftTitle: curTitle,
+      draftBlocks: curBlocks,
+    } = draftStateRef.current;
+    if (!curPage) return;
+
+    const restored = popUndoSnapshot(curPage.id, {
+      title: curTitle,
+      blocks: curBlocks,
+    });
+    if (!restored) return;
+
+    setDraftTitle(restored.title);
+    setDraftBlocks(restored.blocks);
+    draftStateRef.current = {
+      activePage: curPage,
+      draftTitle: restored.title,
+      draftBlocks: restored.blocks,
+    };
+    updatePageBlocks(curPage.id, restored.title, restored.blocks);
+    showToast(
+      {
+        message: 'Cambio deshecho',
+        actionLabel: 'Rehacer',
+        onAction: () => historyActionsRef.current.redo(),
+        variant: 'undo',
+      },
+      2800
+    );
+  };
+
+  const handleRedo = () => {
+    const {
+      activePage: curPage,
+      draftTitle: curTitle,
+      draftBlocks: curBlocks,
+    } = draftStateRef.current;
+    if (!curPage) return;
+
+    const restored = popRedoSnapshot(curPage.id, {
+      title: curTitle,
+      blocks: curBlocks,
+    });
+    if (!restored) return;
+
+    setDraftTitle(restored.title);
+    setDraftBlocks(restored.blocks);
+    draftStateRef.current = {
+      activePage: curPage,
+      draftTitle: restored.title,
+      draftBlocks: restored.blocks,
+    };
+    updatePageBlocks(curPage.id, restored.title, restored.blocks);
+    showToast({ message: 'Cambio rehecho', variant: 'undo' }, 2000);
+  };
+
+  historyActionsRef.current = {
+    recordChange,
+    undo: handleUndo,
+    redo: handleRedo,
+    canUndo,
+    canRedo,
+    anyModalOpen,
   };
 
   const handleTitleChange = (nextTitle: string) => {
-    setDraftTitle(nextTitle);
-    if (activePage) {
-      updatePageBlocks(activePage.id, nextTitle, draftBlocks);
+    const {
+      activePage: curPage,
+      draftTitle: prevTitle,
+      draftBlocks: prevBlocks,
+    } = draftStateRef.current;
+
+    if (curPage) {
+      const res = recordChange(
+        curPage.id,
+        { title: prevTitle, blocks: prevBlocks },
+        { title: nextTitle, blocks: prevBlocks }
+      );
+      draftStateRef.current = {
+        activePage: curPage,
+        draftTitle: nextTitle,
+        draftBlocks: prevBlocks,
+      };
+      setDraftTitle(nextTitle);
+      updatePageBlocks(curPage.id, nextTitle, prevBlocks);
+
+      if (res.largeTextDeletion) {
+        showToast(
+          {
+            message: 'Contenido eliminado',
+            actionLabel: 'Deshacer',
+            onAction: () => historyActionsRef.current.undo(),
+            variant: 'undo',
+          },
+          5000
+        );
+      }
+    } else {
+      setDraftTitle(nextTitle);
     }
   };
 
   const handleBlocksChange = (nextBlocks: NoteBlock[]) => {
-    setDraftBlocks(nextBlocks);
-    if (activePage) {
-      updatePageBlocks(activePage.id, draftTitle, nextBlocks);
+    const {
+      activePage: curPage,
+      draftTitle: prevTitle,
+      draftBlocks: prevBlocks,
+    } = draftStateRef.current;
+
+    if (curPage) {
+      const res = recordChange(
+        curPage.id,
+        { title: prevTitle, blocks: prevBlocks },
+        { title: prevTitle, blocks: nextBlocks }
+      );
+      draftStateRef.current = {
+        activePage: curPage,
+        draftTitle: prevTitle,
+        draftBlocks: nextBlocks,
+      };
+      setDraftBlocks(nextBlocks);
+      updatePageBlocks(curPage.id, prevTitle, nextBlocks);
+
+      if (res.deletedBlock) {
+        showToast(
+          {
+            message: 'Bloque eliminado',
+            actionLabel: 'Deshacer',
+            onAction: () => historyActionsRef.current.undo(),
+            variant: 'undo',
+          },
+          5000
+        );
+      } else if (res.largeTextDeletion) {
+        showToast(
+          {
+            message: 'Contenido eliminado',
+            actionLabel: 'Deshacer',
+            onAction: () => historyActionsRef.current.undo(),
+            variant: 'undo',
+          },
+          5000
+        );
+      }
+    } else {
+      setDraftBlocks(nextBlocks);
     }
+  };
+
+  const handleDeleteActivePage = () => {
+    if (!activePage) return;
+    const deletedId = activePage.id;
+    deletePage(deletedId);
+    showToast(
+      {
+        message: 'Documento movido a la papelera',
+        actionLabel: 'Deshacer',
+        onAction: () => {
+          restorePage(deletedId);
+          if (toastTimeoutRef.current) {
+            clearTimeout(toastTimeoutRef.current);
+            toastTimeoutRef.current = null;
+          }
+          setToastState(null);
+        },
+        variant: 'undo',
+      },
+      5000
+    );
   };
 
   const handlePromoteBlock = (block: NoteBlock) => {
     if (!activePage) return;
     const task = promoteBlockToTask(activePage, block);
     if (task) {
-      showToast(`Enviada a Hoy: "${task.title}"`);
+      showToast({
+        message: `Enviada a Hoy: "${task.title}"`,
+        actionLabel: 'Ver en Hoy →',
+        onAction: () => router.push('/(tabs)/reminders'),
+        variant: 'task',
+      });
     }
   };
 
@@ -530,10 +776,9 @@ export default function NotesWorkspaceScreen() {
           </View>
         ) : null}
 
-        {/* Toast sutil de envío Nota -> Hoy */}
-        {toastText ? (
-          <Pressable
-            onPress={() => router.push('/(tabs)/reminders')}
+        {/* Toast de acciones y recuperación (Deshacer / Rehacer / Nota -> Hoy) */}
+        {toastState ? (
+          <View
             style={[
               styles.toastBanner,
               {
@@ -542,17 +787,42 @@ export default function NotesWorkspaceScreen() {
               },
             ]}
           >
-            <ListCheck size={15} color={theme.accentPrimaryLink} />
+            {toastState.variant === 'undo' ? (
+              <Undo size={15} color={theme.accentPrimaryLink} strokeWidth={2} />
+            ) : (
+              <ListCheck size={15} color={theme.accentPrimaryLink} />
+            )}
             <Text
               style={[styles.toastText, { color: theme.accentPrimaryLink }]}
               numberOfLines={1}
             >
-              {toastText}
+              {toastState.message}
             </Text>
-            <Text style={[styles.toastLink, { color: theme.textPrimary }]}>
-              Ver en Hoy →
-            </Text>
-          </Pressable>
+            {toastState.actionLabel && toastState.onAction ? (
+              <Pressable
+                onPress={toastState.onAction}
+                accessibilityRole="button"
+                accessibilityLabel={toastState.actionLabel}
+                style={({ pressed }) => [
+                  styles.toastActionBtn,
+                  {
+                    backgroundColor: theme.card,
+                    borderColor: theme.accentPrimaryBorder,
+                  },
+                  pressed && { opacity: 0.78 },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.toastLink,
+                    { color: theme.accentPrimaryLink },
+                  ]}
+                >
+                  {toastState.actionLabel}
+                </Text>
+              </Pressable>
+            ) : null}
+          </View>
         ) : null}
 
         {/* Cuerpo Principal: Sidebar Desktop + Lienzo */}
@@ -661,6 +931,65 @@ export default function NotesWorkspaceScreen() {
 
                   {/* Acciones de página */}
                   <View style={styles.pageActionsRow}>
+                    <Pressable
+                      onPress={handleUndo}
+                      disabled={!canUndo}
+                      accessibilityRole="button"
+                      accessibilityLabel="Deshacer último cambio"
+                      style={({ pressed }) => [
+                        styles.actionChip,
+                        {
+                          backgroundColor: canUndo
+                            ? theme.accentPrimarySoft
+                            : theme.pillBg,
+                          borderColor: canUndo
+                            ? theme.accentPrimaryBorder
+                            : theme.glassBorder,
+                          opacity: canUndo ? (pressed ? 0.78 : 1) : 0.45,
+                        },
+                      ]}
+                    >
+                      <Undo
+                        size={13}
+                        color={canUndo ? theme.accentPrimaryLink : theme.textMuted}
+                        strokeWidth={2}
+                      />
+                      <Text
+                        style={[
+                          styles.actionChipText,
+                          {
+                            color: canUndo
+                              ? theme.accentPrimaryLink
+                              : theme.textMuted,
+                          },
+                        ]}
+                      >
+                        Deshacer
+                      </Text>
+                    </Pressable>
+
+                    {canRedo ? (
+                      <Pressable
+                        onPress={handleRedo}
+                        accessibilityRole="button"
+                        accessibilityLabel="Rehacer cambio"
+                        style={({ pressed }) => [
+                          styles.actionIconBtn,
+                          {
+                            backgroundColor: theme.pillBg,
+                            borderColor: theme.glassBorder,
+                            opacity: pressed ? 0.78 : 1,
+                          },
+                        ]}
+                      >
+                        <Redo
+                          size={13}
+                          color={theme.textSecondary}
+                          strokeWidth={2}
+                        />
+                      </Pressable>
+                    ) : null}
+
                     <Pressable
                       onPress={() => handleCreateSubpage(activePage.id)}
                       accessibilityLabel="Crear subpágina"
@@ -802,7 +1131,7 @@ export default function NotesWorkspaceScreen() {
                     </Pressable>
 
                     <Pressable
-                      onPress={() => deletePage(activePage.id)}
+                      onPress={handleDeleteActivePage}
                       accessibilityLabel="Mover a papelera"
                       style={[
                         styles.actionIconBtn,
@@ -1275,6 +1604,13 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
   },
+  toastActionBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    flexShrink: 0,
+  },
   toastLink: {
     fontSize: 12,
     fontWeight: '700',
@@ -1307,6 +1643,7 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   topMetaRow: {
+    width: '100%',
     flexDirection: 'row',
     flexWrap: 'wrap',
     alignItems: 'center',
@@ -1336,6 +1673,8 @@ const styles = StyleSheet.create({
   },
   pageActionsRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
+    maxWidth: '100%',
     alignItems: 'center',
     gap: 6,
   },

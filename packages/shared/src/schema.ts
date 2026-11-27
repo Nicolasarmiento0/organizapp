@@ -196,6 +196,7 @@ export const habitRewards = sqliteTable(
  * ============================================================================
  */
 export type WorkBlockType = 'work_shift' | 'deep_work' | 'meeting' | 'break' | 'personal';
+export type WorkBlockAlertMinutes = 0 | 15 | 60;
 
 export const workBlocks = sqliteTable(
   'work_blocks',
@@ -207,6 +208,11 @@ export const workBlocks = sqliteTable(
     dateKey: text('date_key').notNull(), // YYYY-MM-DD
     startTime: text('start_time').notNull(), // HH:mm
     endTime: text('end_time').notNull(), // HH:mm
+    isAllDay: integer('is_all_day', { mode: 'boolean' }).notNull().default(false),
+    alertMinutesBefore: integer('alert_minutes_before'), // null | 0 | 15 | 60
+    notificationId: text('notification_id'),
+    color: text('color'),
+    linkedTaskId: text('linked_task_id'),
     locationOrLink: text('location_or_link'),
     isRecurring: integer('is_recurring', { mode: 'boolean' }).notNull().default(false),
     recurrenceDays: text('recurrence_days'), // JSON array de días [1,2,3,4,5]
@@ -218,6 +224,34 @@ export const workBlocks = sqliteTable(
   (table) => [
     index('idx_work_blocks_date').on(table.dateKey, table.startTime),
     index('idx_work_blocks_dirty').on(table.isDirty),
+  ]
+);
+
+/**
+ * ============================================================================
+ * 4b. PLANTILLAS DE TURNOS DE TRABAJO (1-Tap Shift Painter)
+ * ============================================================================
+ */
+export const shiftTemplates = sqliteTable(
+  'shift_templates',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id').notNull(),
+    name: text('name').notNull(),
+    startTime: text('start_time').notNull(), // HH:mm
+    endTime: text('end_time').notNull(), // HH:mm
+    color: text('color').notNull().default('#7C3AED'),
+    alertMinutesBefore: integer('alert_minutes_before'), // null | 0 | 15 | 60
+    locationOrLink: text('location_or_link'),
+    sortOrder: integer('sort_order').notNull().default(0),
+    isDirty: integer('is_dirty', { mode: 'boolean' }).notNull().default(true),
+    deletedAt: integer('deleted_at'),
+    createdAt: integer('created_at').notNull(),
+    updatedAt: integer('updated_at').notNull(),
+  },
+  (table) => [
+    index('idx_shift_templates_user_updated').on(table.userId, table.updatedAt),
+    index('idx_shift_templates_dirty').on(table.isDirty),
   ]
 );
 
@@ -307,6 +341,9 @@ export type NewHabitRewardRecord = typeof habitRewards.$inferInsert;
 export type WorkBlockRecord = typeof workBlocks.$inferSelect;
 export type NewWorkBlockRecord = typeof workBlocks.$inferInsert;
 
+export type ShiftTemplateRecord = typeof shiftTemplates.$inferSelect;
+export type NewShiftTemplateRecord = typeof shiftTemplates.$inferInsert;
+
 export type NotePageRecord = typeof notePages.$inferSelect;
 export type NewNotePageRecord = typeof notePages.$inferInsert;
 
@@ -316,6 +353,7 @@ export interface SyncChangeset {
   habitLogs: HabitLogRecord[];
   habitRewards: HabitRewardRecord[];
   workBlocks: WorkBlockRecord[];
+  shiftTemplates: ShiftTemplateRecord[];
   notePages: NotePageRecord[];
 }
 
@@ -428,6 +466,11 @@ export const LOCAL_SQLITE_BOOTSTRAP_SQL: readonly string[] = [
     date_key TEXT NOT NULL,
     start_time TEXT NOT NULL,
     end_time TEXT NOT NULL,
+    is_all_day INTEGER NOT NULL DEFAULT 0,
+    alert_minutes_before INTEGER,
+    notification_id TEXT,
+    color TEXT,
+    linked_task_id TEXT,
     location_or_link TEXT,
     is_recurring INTEGER NOT NULL DEFAULT 0,
     recurrence_days TEXT,
@@ -438,6 +481,24 @@ export const LOCAL_SQLITE_BOOTSTRAP_SQL: readonly string[] = [
   );`,
   `CREATE INDEX IF NOT EXISTS idx_work_blocks_date ON work_blocks(date_key, start_time);`,
   `CREATE INDEX IF NOT EXISTS idx_work_blocks_dirty ON work_blocks(is_dirty);`,
+
+  `CREATE TABLE IF NOT EXISTS shift_templates (
+    id TEXT PRIMARY KEY NOT NULL,
+    user_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    start_time TEXT NOT NULL,
+    end_time TEXT NOT NULL,
+    color TEXT NOT NULL DEFAULT '#7C3AED',
+    alert_minutes_before INTEGER,
+    location_or_link TEXT,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    is_dirty INTEGER NOT NULL DEFAULT 1,
+    deleted_at INTEGER,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );`,
+  `CREATE INDEX IF NOT EXISTS idx_shift_templates_user_updated ON shift_templates(user_id, updated_at);`,
+  `CREATE INDEX IF NOT EXISTS idx_shift_templates_dirty ON shift_templates(is_dirty);`,
 
   `CREATE TABLE IF NOT EXISTS note_pages (
     id TEXT PRIMARY KEY NOT NULL,
@@ -522,4 +583,32 @@ export const LOCAL_SQLITE_MIGRATION_V5_SQL: readonly string[] = [
   `ALTER TABLE tasks ADD COLUMN is_flagged INTEGER NOT NULL DEFAULT 0;`,
   `ALTER TABLE tasks ADD COLUMN notified INTEGER NOT NULL DEFAULT 0;`,
   `CREATE INDEX IF NOT EXISTS idx_tasks_reminder_pending ON tasks(reminder_at, notified, is_completed, deleted_at);`,
+];
+
+/**
+ * Sentencias de migración incremental V6 (Calendario v2: todo el día, alertas escalonadas, linkedTaskId y plantillas de turnos).
+ */
+export const LOCAL_SQLITE_MIGRATION_V6_SQL: readonly string[] = [
+  `ALTER TABLE work_blocks ADD COLUMN is_all_day INTEGER NOT NULL DEFAULT 0;`,
+  `ALTER TABLE work_blocks ADD COLUMN alert_minutes_before INTEGER;`,
+  `ALTER TABLE work_blocks ADD COLUMN notification_id TEXT;`,
+  `ALTER TABLE work_blocks ADD COLUMN color TEXT;`,
+  `ALTER TABLE work_blocks ADD COLUMN linked_task_id TEXT;`,
+  `CREATE TABLE IF NOT EXISTS shift_templates (
+    id TEXT PRIMARY KEY NOT NULL,
+    user_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    start_time TEXT NOT NULL,
+    end_time TEXT NOT NULL,
+    color TEXT NOT NULL DEFAULT '#7C3AED',
+    alert_minutes_before INTEGER,
+    location_or_link TEXT,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    is_dirty INTEGER NOT NULL DEFAULT 1,
+    deleted_at INTEGER,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );`,
+  `CREATE INDEX IF NOT EXISTS idx_shift_templates_user_updated ON shift_templates(user_id, updated_at);`,
+  `CREATE INDEX IF NOT EXISTS idx_shift_templates_dirty ON shift_templates(is_dirty);`,
 ];

@@ -107,12 +107,16 @@ export function useDashboardData(userId = '') {
   const [blocksForSelectedDate, setBlocksForSelectedDate] = useState<
     WorkBlockRecord[]
   >(() => localStore.getWorkBlocksForDate(todayKey));
+  const [allWorkBlocks, setAllWorkBlocks] = useState<WorkBlockRecord[]>(() =>
+    localStore.getAllWorkBlocks()
+  );
   const [notes, setNotes] = useState<NotePageRecord[]>(() =>
     localStore.getNotePages()
   );
 
   const refreshDashboardCollections = useCallback(() => {
     setBlocksForSelectedDate(localStore.getWorkBlocksForDate(selectedDateKey));
+    setAllWorkBlocks(localStore.getAllWorkBlocks());
     setNotes(localStore.getNotePages());
   }, [selectedDateKey]);
 
@@ -248,6 +252,7 @@ export function useDashboardData(userId = '') {
     goToToday,
     activeDaysInMonth,
     blocksForSelectedDate,
+    allWorkBlocks,
     tasks,
     habits: todayHabits,
     allEnrichedHabits: habits,

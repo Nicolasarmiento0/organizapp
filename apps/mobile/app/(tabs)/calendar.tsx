@@ -1,91 +1,103 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Pressable,
-  ScrollView,
+  Platform,
   StyleSheet,
   Text,
-  TextInput,
+  useWindowDimensions,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import type { TaskRecord, WorkBlockType } from '@organiza/shared/schema';
-import {
-  AlarmSleep,
-  Bell,
-  Briefcase,
-  Calendar,
-  Check,
-  Circle,
-  Flag,
-  MapPin,
-  Plus,
-  Trash2,
-  Zap,
-} from '../../src/components/icons';
-import {
-  iconMetrics,
-  radii,
-  shadows,
-  spacing,
-  typography,
-} from '../../src/theme/tokens';
-import { useTheme } from '../../src/theme/ThemeContext';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import type { TaskRecord, WorkBlockRecord } from '@organiza/shared/schema';
+import { AlarmSleep, Calendar } from '../../src/components/icons';
 import { LiquidGlassCard } from '../../src/components/glass/LiquidGlassCard';
-import { MacIconBadge } from '../../src/components/glass/MacIconBadge';
-import { useCalendarSchedule } from '../../src/features/calendar';
 import {
-  SnoozeMenuModal,
-  isTaskOverdue,
-  type SnoozePreset,
-} from '../../src/features/reminders';
-import { WeekDayLensPill } from '../../src/features/dashboard/CalendarDayCell';
+  ALERT_OPTIONS,
+  CALENDAR_COLORS,
+  CalendarEventModal,
+  CalendarHeaderStrip,
+  ShiftPainterSheet,
+  TimelineCanvas,
+  UnscheduledTraySheet,
+  minutesToTime,
+  snapMinutes,
+  useCalendarSchedule,
+  type ExternalDragPreview,
+  type TimelineCanvasHandle,
+} from '../../src/features/calendar';
+import { SnoozeMenuModal, type SnoozePreset } from '../../src/features/reminders';
 import { getTodayDateKey } from '../../src/db/client';
 import { authClient, resolveActiveUserId } from '../../src/services/authClient';
+import { iconMetrics, radii, shadows, spacing } from '../../src/theme/tokens';
+import { useTheme } from '../../src/theme/ThemeContext';
 
-function buildWeekDays() {
-  const base = new Date();
-  const days: Array<{ dateKey: string; dayShort: string; dayNum: string }> = [];
-  const shortNames = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
-
-  for (let offset = -1; offset <= 5; offset++) {
-    const d = new Date(base);
-    d.setDate(base.getDate() + offset);
-    days.push({
-      dateKey: getTodayDateKey(d),
-      dayShort: shortNames[d.getDay()] ?? 'Día',
-      dayNum: String(d.getDate()).padStart(2, '0'),
-    });
-  }
-  return days;
+interface DragGhostState {
+  task: TaskRecord;
+  x: number;
+  y: number;
+  dropMinutes: number | null;
 }
 
 export default function CalendarScheduleScreen() {
   const { theme } = useTheme();
+  const { width } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  const isDesktop = width >= 860;
+
   const { data: session } = authClient.useSession();
   const activeUserId = resolveActiveUserId(session?.user?.id);
-
   const todayKey = getTodayDateKey();
+
   const {
+    nowMinutes,
     selectedDateKey,
     setSelectedDateKey,
     blocks,
+    allDayBlocks,
+    timedBlocks,
     timedReminders,
-    timelineItems,
-    reminderDateKeys,
+    overdueReminders,
+    anchoredHabits,
+    unscheduledTasks,
+    liveNextUp,
+    shiftTemplates,
+    upcomingRestPeriods,
+    getDayActivityDots,
+    getShiftBlockForDate,
     addWorkBlock,
+    updateWorkBlock,
     removeWorkBlock,
     toggleReminderComplete,
+    rescheduleReminderToSlot,
+    scheduleUnscheduledTaskToSlot,
+    bringOverdueReminderToNow,
     snoozeReminder,
+    toggleCalendarHabit,
+    seedDefaultShiftTemplatesIfEmpty,
+    createShiftTemplate,
+    updateShiftTemplate,
+    deleteShiftTemplate,
+    paintShiftOnDate,
+    paintShiftOnWeekdays,
+    applyRotation6x4Schedule,
+    clearFutureShifts,
   } = useCalendarSchedule(todayKey, activeUserId);
 
-  const weekDays = useMemo(() => buildWeekDays(), []);
-  const [newTitle, setNewTitle] = useState('');
-  const [newStart, setNewStart] = useState('10:00');
-  const [newEnd, setNewEnd] = useState('12:00');
-  const [selectedType, setSelectedType] = useState<WorkBlockType>('deep_work');
+  const timelineRef = useRef<TimelineCanvasHandle>(null);
+
+  const [isMonthExpanded, setIsMonthExpanded] = useState(false);
+  const [isTrayOpen, setIsTrayOpen] = useState(false);
+  const [isShiftPainterOpen, setIsShiftPainterOpen] = useState(false);
+
+  const [eventModalVisible, setEventModalVisible] = useState(false);
+  const [editingBlock, setEditingBlock] = useState<WorkBlockRecord | null>(null);
+  const [modalInitialStart, setModalInitialStart] = useState('10:00');
+  const [modalInitialEnd, setModalInitialEnd] = useState('11:00');
+
   const [snoozeTargetTask, setSnoozeTargetTask] = useState<TaskRecord | null>(
     null
   );
+  const [dragGhost, setDragGhost] = useState<DragGhostState | null>(null);
+
   const [feedbackToast, setFeedbackToast] = useState<string | null>(null);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -97,7 +109,7 @@ export default function CalendarScheduleScreen() {
     };
   }, []);
 
-  const showToast = (message: string) => {
+  const showToast = useCallback((message: string) => {
     if (toastTimerRef.current) {
       clearTimeout(toastTimerRef.current);
     }
@@ -106,496 +118,331 @@ export default function CalendarScheduleScreen() {
       setFeedbackToast(null);
       toastTimerRef.current = null;
     }, 2600);
-  };
+  }, []);
 
-  const handleSelectSnooze = (taskId: string, preset: SnoozePreset) => {
-    const result = snoozeReminder(taskId, preset);
-    if (result) {
-      showToast(`Pospuesto para ${result.displayLabel}`);
-    }
-  };
+  const handleToggleMonth = useCallback((next?: boolean) => {
+    setIsMonthExpanded((prev) => (typeof next === 'boolean' ? next : !prev));
+  }, []);
 
-  const calendarPalette = theme.modules.calendar;
-  const nowMs = Date.now();
+  const openCreateModalAt = useCallback((startMinutes: number) => {
+    const startClock = minutesToTime(startMinutes);
+    const endClock = minutesToTime(Math.min(23 * 60 + 55, startMinutes + 60));
+    setEditingBlock(null);
+    setModalInitialStart(startClock);
+    setModalInitialEnd(endClock);
+    setEventModalVisible(true);
+  }, []);
 
-  const handleAddBlock = () => {
-    const clean = newTitle.trim();
-    if (!clean) return;
-    addWorkBlock({
-      title: clean,
-      blockType: selectedType,
-      startTime: newStart.trim() || '09:00',
-      endTime: newEnd.trim() || '11:00',
-      locationOrLink:
-        selectedType === 'deep_work'
-          ? 'Bloque de concentración profunda'
-          : 'Horario laboral programado',
-      isRecurring: false,
-    });
-    setNewTitle('');
-  };
+  const handleOpenNewEvent = useCallback(() => {
+    const defaultStart =
+      selectedDateKey === todayKey
+        ? Math.min(22 * 60, snapMinutes(nowMinutes + 15, 15))
+        : 9 * 60;
+    openCreateModalAt(defaultStart);
+  }, [nowMinutes, openCreateModalAt, selectedDateKey, todayKey]);
+
+  const handleOpenEditBlock = useCallback((block: WorkBlockRecord) => {
+    setEditingBlock(block);
+    setEventModalVisible(true);
+  }, []);
+
+  const handleSaveEvent = useCallback(
+    (payload: {
+      id?: string;
+      title: string;
+      blockType: WorkBlockRecord['blockType'];
+      startTime: string;
+      endTime: string;
+      isAllDay: boolean;
+      alertMinutesBefore: 0 | 15 | 60 | null;
+      color: string | null;
+      locationOrLink: string;
+    }) => {
+      if (payload.id) {
+        updateWorkBlock(payload.id, {
+          title: payload.title,
+          blockType: payload.blockType,
+          startTime: payload.startTime,
+          endTime: payload.endTime,
+          isAllDay: payload.isAllDay,
+          alertMinutesBefore: payload.alertMinutesBefore,
+          color: payload.color,
+          locationOrLink: payload.locationOrLink,
+        });
+        showToast('Bloque actualizado');
+      } else {
+        addWorkBlock({
+          title: payload.title,
+          blockType: payload.blockType,
+          dateKey: selectedDateKey,
+          startTime: payload.startTime,
+          endTime: payload.endTime,
+          isAllDay: payload.isAllDay,
+          alertMinutesBefore: payload.alertMinutesBefore,
+          color: payload.color,
+          locationOrLink: payload.locationOrLink,
+        });
+        const alertMeta = ALERT_OPTIONS.find(
+          (a) => a.value === payload.alertMinutesBefore
+        );
+        if (!payload.isAllDay && payload.alertMinutesBefore !== null && alertMeta) {
+          showToast(`Agendado · Alerta ${alertMeta.shortLabel.toLowerCase()}`);
+        } else {
+          showToast('Bloque agendado');
+        }
+      }
+    },
+    [addWorkBlock, selectedDateKey, showToast, updateWorkBlock]
+  );
+
+  const handleMoveBlock = useCallback(
+    (blockId: string, newStartTime: string, newEndTime: string) => {
+      updateWorkBlock(blockId, {
+        startTime: newStartTime,
+        endTime: newEndTime,
+      });
+      showToast(`Movido a ${newStartTime} – ${newEndTime}`);
+    },
+    [showToast, updateWorkBlock]
+  );
+
+  const handleResizeBlock = useCallback(
+    (blockId: string, newEndTime: string) => {
+      updateWorkBlock(blockId, { endTime: newEndTime });
+      showToast(`Duración actualizada hasta ${newEndTime}`);
+    },
+    [showToast, updateWorkBlock]
+  );
+
+  const handleMoveReminder = useCallback(
+    (taskId: string, newStartMinutes: number) => {
+      rescheduleReminderToSlot(taskId, selectedDateKey, newStartMinutes);
+      showToast(`Recordatorio movido a ${minutesToTime(newStartMinutes)}`);
+    },
+    [rescheduleReminderToSlot, selectedDateKey, showToast]
+  );
+
+  const handleBringOverdueToNow = useCallback(
+    (taskId: string) => {
+      bringOverdueReminderToNow(taskId);
+      showToast('Recordatorio movido al bloque actual');
+    },
+    [bringOverdueReminderToNow, showToast]
+  );
+
+  const handleSelectSnooze = useCallback(
+    (taskId: string, preset: SnoozePreset) => {
+      const result = snoozeReminder(taskId, preset);
+      if (result) {
+        showToast(`Pospuesto para ${result.displayLabel}`);
+      }
+    },
+    [showToast, snoozeReminder]
+  );
+
+  const handleQuickScheduleUnscheduled = useCallback(
+    (task: TaskRecord, startMinutes: number) => {
+      scheduleUnscheduledTaskToSlot(task.id, selectedDateKey, startMinutes, 60);
+      timelineRef.current?.scrollToMinutes(startMinutes);
+      showToast(`Programado a las ${minutesToTime(startMinutes)}`);
+    },
+    [scheduleUnscheduledTaskToSlot, selectedDateKey, showToast]
+  );
+
+  // Drag & drop desde la bandeja "Sin Programar" hacia la línea de tiempo
+  const handleTrayDragStart = useCallback(
+    (task: TaskRecord, absX: number, absY: number) => {
+      const dropMinutes =
+        timelineRef.current?.resolveDropMinute(absX, absY) ?? null;
+      setDragGhost({ task, x: absX, y: absY, dropMinutes });
+    },
+    []
+  );
+
+  const handleTrayDragMove = useCallback((absX: number, absY: number) => {
+    const dropMinutes =
+      timelineRef.current?.resolveDropMinute(absX, absY) ?? null;
+    setDragGhost((prev) =>
+      prev ? { ...prev, x: absX, y: absY, dropMinutes } : null
+    );
+  }, []);
+
+  const handleTrayDragEnd = useCallback(
+    (task: TaskRecord, absX: number, absY: number) => {
+      const dropMinutes =
+        timelineRef.current?.resolveDropMinute(absX, absY) ?? null;
+      setDragGhost(null);
+      if (dropMinutes !== null) {
+        scheduleUnscheduledTaskToSlot(task.id, selectedDateKey, dropMinutes, 60);
+        showToast(`Programado a las ${minutesToTime(dropMinutes)}`);
+      }
+    },
+    [scheduleUnscheduledTaskToSlot, selectedDateKey, showToast]
+  );
+
+  const externalDropPreview = useMemo<ExternalDragPreview | null>(() => {
+    if (!dragGhost || dragGhost.dropMinutes === null) return null;
+    return {
+      title: dragGhost.task.title,
+      startMinutes: dragGhost.dropMinutes,
+      durationMinutes: 60,
+    };
+  }, [dragGhost]);
+
+  const dockClearance = isDesktop
+    ? 20
+    : Math.max(insets.bottom, Platform.OS === 'ios' ? 16 : 12) + 74;
 
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.canvas }]} edges={['top']}>
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-      >
-        {/* Cabecera Fase 2: Calendario & Horarios */}
-        <View style={styles.headerRow}>
-          <View style={styles.headerLeft}>
-            <MacIconBadge
-              icon={Calendar}
-              module="calendar"
-              containerSize={40}
-              size={20}
-            />
-            <View>
-              <Text style={[styles.phaseTag, { color: calendarPalette.icon }]}>
-                FASE 2 • ESTILO macOS & TIME-BLOCKING
-              </Text>
-              <Text style={[styles.screenTitle, { color: theme.textPrimary }]}>
-                Calendario & Horarios
-              </Text>
-            </View>
-          </View>
-        </View>
+    <SafeAreaView
+      style={[styles.safeArea, { backgroundColor: theme.canvas }]}
+      edges={['top']}
+    >
+      <View style={styles.stageContainer}>
+        <CalendarHeaderStrip
+          selectedDateKey={selectedDateKey}
+          todayKey={todayKey}
+          isMonthExpanded={isMonthExpanded}
+          onToggleMonthExpanded={handleToggleMonth}
+          onSelectDate={(key) => {
+            setSelectedDateKey(key);
+          }}
+          getDayActivityDots={getDayActivityDots}
+          unscheduledCount={unscheduledTasks.length}
+          isTrayOpen={isTrayOpen}
+          onToggleTray={() => setIsTrayOpen((prev) => !prev)}
+          onOpenShiftPainter={() => setIsShiftPainterOpen(true)}
+          onOpenNewEvent={handleOpenNewEvent}
+        />
 
-        {/* Selector Horizontal de Semana */}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.weekStrip}
+        <TimelineCanvas
+          ref={timelineRef}
+          selectedDateKey={selectedDateKey}
+          todayKey={todayKey}
+          nowMinutes={nowMinutes}
+          liveNextUp={liveNextUp}
+          allDayBlocks={allDayBlocks}
+          timedBlocks={timedBlocks}
+          timedReminders={timedReminders}
+          overdueReminders={overdueReminders}
+          anchoredHabits={anchoredHabits}
+          externalDropPreview={externalDropPreview}
+          bottomContentPadding={
+            dockClearance + (isTrayOpen ? 164 : 24)
+          }
+          onPressBlock={handleOpenEditBlock}
+          onMoveBlock={handleMoveBlock}
+          onResizeBlock={handleResizeBlock}
+          onLongPressEmptySlot={openCreateModalAt}
+          onToggleReminderComplete={toggleReminderComplete}
+          onMoveReminder={handleMoveReminder}
+          onBringOverdueToNow={handleBringOverdueToNow}
+          onOpenSnooze={(task) => setSnoozeTargetTask(task)}
+          onToggleHabit={(habitId) => toggleCalendarHabit(habitId, selectedDateKey)}
+        />
+      </View>
+
+      {/* Bandeja Desplegable de "Sin Programar" */}
+      <UnscheduledTraySheet
+        visible={isTrayOpen}
+        tasks={unscheduledTasks}
+        blocksOnDate={blocks}
+        nowMinutes={nowMinutes}
+        bottomOffset={dockClearance}
+        onClose={() => setIsTrayOpen(false)}
+        onQuickScheduleTask={handleQuickScheduleUnscheduled}
+        onDragStart={handleTrayDragStart}
+        onDragMove={handleTrayDragMove}
+        onDragEnd={handleTrayDragEnd}
+      />
+
+      {/* Ghost flotante al arrastrar desde Sin Programar */}
+      {dragGhost ? (
+        <View
+          pointerEvents="none"
+          style={[
+            styles.ghostPill,
+            {
+              left: Math.max(12, dragGhost.x - 95),
+              top: Math.max(12, dragGhost.y - 42),
+              backgroundColor: theme.cardElevated,
+              borderColor: CALENDAR_COLORS.coral,
+            },
+          ]}
         >
-          {weekDays.map((day) => {
-            const isSelected = day.dateKey === selectedDateKey;
-            return (
-              <WeekDayLensPill
-                key={day.dateKey}
-                dateKey={day.dateKey}
-                dayShort={day.dayShort}
-                dayNum={day.dayNum}
-                isSelected={isSelected}
-                hasActivity={reminderDateKeys.has(day.dateKey)}
-                onSelect={setSelectedDateKey}
-                borderRadius={radii.md}
-              />
-            );
-          })}
-        </ScrollView>
-
-        {/* Creador Rápido de Bloque Horario */}
-        <LiquidGlassCard style={styles.creatorCard} contentStyle={styles.creatorContent}>
-          <Text style={[styles.cardSectionTitle, { color: theme.textSecondary }]}>
-            Nuevo Bloque de Horario / Trabajo
-          </Text>
-
-          <TextInput
-            value={newTitle}
-            onChangeText={setNewTitle}
-            placeholder="Ej. Turno Mañana, Deep Work o Reunión..."
-            placeholderTextColor={theme.textMuted}
-            style={[
-              styles.input,
-              {
-                backgroundColor: theme.inputBg,
-                borderColor: theme.glassBorder,
-                color: theme.textPrimary,
-              },
-            ]}
+          <Calendar
+            size={14}
+            color={CALENDAR_COLORS.coral}
+            strokeWidth={2}
           />
-
-          <View style={styles.timeInputsRow}>
-            <View style={styles.timeField}>
-              <Text style={[styles.smallLabel, { color: theme.textSecondary }]}>Inicio</Text>
-              <TextInput
-                value={newStart}
-                onChangeText={setNewStart}
-                placeholder="09:00"
-                placeholderTextColor={theme.textMuted}
-                style={[
-                  styles.timeInput,
-                  {
-                    backgroundColor: theme.inputBg,
-                    borderColor: theme.glassBorder,
-                    color: theme.textPrimary,
-                  },
-                ]}
-              />
-            </View>
-            <View style={styles.timeField}>
-              <Text style={[styles.smallLabel, { color: theme.textSecondary }]}>Fin</Text>
-              <TextInput
-                value={newEnd}
-                onChangeText={setNewEnd}
-                placeholder="11:00"
-                placeholderTextColor={theme.textMuted}
-                style={[
-                  styles.timeInput,
-                  {
-                    backgroundColor: theme.inputBg,
-                    borderColor: theme.glassBorder,
-                    color: theme.textPrimary,
-                  },
-                ]}
-              />
-            </View>
-          </View>
-
-          <View style={styles.typeSelectorRow}>
-            {(
-              [
-                { key: 'deep_work', label: 'Deep Work' },
-                { key: 'work_shift', label: 'Turno Trabajo' },
-                { key: 'personal', label: 'Personal' },
-              ] as const
-            ).map((t) => {
-              const active = selectedType === t.key;
-              return (
-                <Pressable
-                  key={t.key}
-                  onPress={() => setSelectedType(t.key)}
-                  style={[
-                    styles.typeChip,
-                    {
-                      backgroundColor: active
-                        ? calendarPalette.background
-                        : theme.inputBg,
-                      borderColor: active
-                        ? calendarPalette.border
-                        : theme.glassBorder,
-                    },
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.typeChipText,
-                      {
-                        color: active ? calendarPalette.icon : theme.textSecondary,
-                      },
-                      active && { fontWeight: '700' },
-                    ]}
-                  >
-                    {t.label}
-                  </Text>
-                </Pressable>
-              );
-            })}
-
-            <Pressable
-              onPress={handleAddBlock}
-              style={[styles.addBlockButton, { backgroundColor: theme.accentCobalt }]}
+          <View style={styles.ghostTextCol}>
+            <Text
+              style={[styles.ghostTitle, { color: theme.textPrimary }]}
+              numberOfLines={1}
             >
-              <Plus size={16} color="#FFFFFF" strokeWidth={2.2} />
-              <Text style={styles.addBlockButtonText}>Agendar</Text>
-            </Pressable>
+              {dragGhost.task.title}
+            </Text>
+            <Text
+              style={[styles.ghostSub, { color: CALENDAR_COLORS.coral }]}
+            >
+              {dragGhost.dropMinutes !== null
+                ? `Soltar a las ${minutesToTime(dragGhost.dropMinutes)}`
+                : 'Arrastra sobre la línea de tiempo'}
+            </Text>
           </View>
-        </LiquidGlassCard>
-
-        {/* Línea de Tiempo del Día */}
-        <View style={styles.timelineSection}>
-          <Text style={[styles.timelineHeader, { color: theme.textPrimary }]}>
-            Cronograma · {blocks.length}{' '}
-            {blocks.length === 1 ? 'bloque' : 'bloques'} ·{' '}
-            {timedReminders.length}{' '}
-            {timedReminders.length === 1 ? 'recordatorio' : 'recordatorios'}
-          </Text>
-
-          {timelineItems.length === 0 ? (
-            <LiquidGlassCard style={styles.emptyTimelineCard}>
-              <Text style={[styles.emptyTimelineText, { color: theme.textSecondary }]}>
-                Sin bloques ni recordatorios programados con hora para este día.
-              </Text>
-            </LiquidGlassCard>
-          ) : (
-            timelineItems.map((item) => {
-              if (item.kind === 'reminder') {
-                const { task } = item;
-                const overdue = isTaskOverdue(task, nowMs, todayKey);
-                const isUrgent = Boolean(task.isFlagged) || task.priority === 3;
-                const ringColor =
-                  isUrgent || overdue
-                    ? theme.accentPrimaryLink
-                    : theme.accentPrimary;
-
-                return (
-                  <LiquidGlassCard
-                    key={`reminder-${task.id}`}
-                    noPadding
-                    style={[
-                      styles.blockCard,
-                      !task.isCompleted && {
-                        borderColor: theme.accentPrimaryBorder,
-                      },
-                    ]}
-                    contentStyle={[
-                      styles.blockRow,
-                      !task.isCompleted && {
-                        backgroundColor: theme.accentPrimarySoft,
-                      },
-                    ]}
-                  >
-                    <View style={styles.timeColumn}>
-                      <Text
-                        style={[
-                          styles.startTimeText,
-                          {
-                            color: task.isCompleted
-                              ? theme.textMuted
-                              : theme.accentPrimaryLink,
-                          },
-                        ]}
-                      >
-                        {item.sortTime}
-                      </Text>
-                      <Text
-                        style={[
-                          styles.endTimeText,
-                          { color: theme.textSecondary },
-                        ]}
-                      >
-                        Aviso
-                      </Text>
-                    </View>
-
-                    <Pressable
-                      onPress={() => toggleReminderComplete(task.id)}
-                      hitSlop={10}
-                      style={styles.reminderRingHit}
-                    >
-                      {task.isCompleted ? (
-                        <View
-                          style={[
-                            styles.reminderCheckedCircle,
-                            { backgroundColor: theme.accentPrimary },
-                          ]}
-                        >
-                          <Check
-                            size={14}
-                            color={theme.accentPrimaryText}
-                            strokeWidth={2.5}
-                          />
-                        </View>
-                      ) : (
-                        <Circle
-                          size={22}
-                          color={ringColor}
-                          strokeWidth={2.1}
-                        />
-                      )}
-                    </Pressable>
-
-                    <View style={styles.blockMainInfo}>
-                      <View style={styles.blockTypeBadgeRow}>
-                        <Bell
-                          size={12}
-                          color={
-                            task.isCompleted
-                              ? theme.textMuted
-                              : theme.accentPrimaryLink
-                          }
-                          strokeWidth={2}
-                        />
-                        <Text
-                          style={[
-                            styles.blockTypeLabel,
-                            {
-                              color: task.isCompleted
-                                ? theme.textMuted
-                                : theme.accentPrimaryLink,
-                            },
-                          ]}
-                        >
-                          RECORDATORIO
-                        </Text>
-
-                        {task.isFlagged ? (
-                          <Flag
-                            size={11}
-                            color={theme.accentPrimaryLink}
-                            strokeWidth={2}
-                          />
-                        ) : null}
-
-                        {overdue && !task.isCompleted ? (
-                          <View
-                            style={[
-                              styles.overdueTag,
-                              {
-                                backgroundColor: theme.accentPrimary,
-                              },
-                            ]}
-                          >
-                            <Text
-                              style={[
-                                styles.overdueTagText,
-                                { color: theme.accentPrimaryText },
-                              ]}
-                            >
-                              Vencido
-                            </Text>
-                          </View>
-                        ) : null}
-                      </View>
-
-                      <Text
-                        style={[
-                          styles.blockTitle,
-                          { color: theme.textPrimary },
-                          task.isCompleted && {
-                            textDecorationLine: 'line-through',
-                            color: theme.textMuted,
-                          },
-                        ]}
-                      >
-                        {task.title}
-                      </Text>
-
-                      {task.notes ? (
-                        <Text
-                          style={[
-                            styles.locationText,
-                            { color: theme.textSecondary },
-                          ]}
-                          numberOfLines={1}
-                        >
-                          {task.notes}
-                        </Text>
-                      ) : null}
-                    </View>
-
-                    {!task.isCompleted ? (
-                      <Pressable
-                        onPress={() => setSnoozeTargetTask(task)}
-                        hitSlop={8}
-                        style={[
-                          styles.snoozePillBtn,
-                          {
-                            backgroundColor: theme.card,
-                            borderColor: theme.accentPrimaryBorder,
-                          },
-                        ]}
-                      >
-                        <AlarmSleep
-                          size={15}
-                          color={theme.accentPrimaryLink}
-                          strokeWidth={iconMetrics.strokeWidth}
-                        />
-                      </Pressable>
-                    ) : null}
-                  </LiquidGlassCard>
-                );
-              }
-
-              const { block } = item;
-              const isDeepWork = block.blockType === 'deep_work';
-              const badgePalette = isDeepWork
-                ? theme.modules.calendar
-                : theme.modules.dashboard;
-
-              return (
-                <LiquidGlassCard
-                  key={`block-${block.id}`}
-                  noPadding
-                  style={styles.blockCard}
-                  contentStyle={styles.blockRow}
-                >
-                  <View style={styles.timeColumn}>
-                    <Text
-                      style={[styles.startTimeText, { color: theme.textPrimary }]}
-                    >
-                      {block.startTime}
-                    </Text>
-                    <Text
-                      style={[
-                        styles.endTimeText,
-                        { color: theme.textSecondary },
-                      ]}
-                    >
-                      {block.endTime}
-                    </Text>
-                  </View>
-
-                  <View
-                    style={[
-                      styles.verticalAccentBar,
-                      { backgroundColor: badgePalette.icon },
-                    ]}
-                  />
-
-                  <View style={styles.blockMainInfo}>
-                    <View style={styles.blockTypeBadgeRow}>
-                      {isDeepWork ? (
-                        <Zap
-                          size={12}
-                          color={badgePalette.icon}
-                          strokeWidth={2}
-                        />
-                      ) : (
-                        <Briefcase
-                          size={12}
-                          color={badgePalette.icon}
-                          strokeWidth={2}
-                        />
-                      )}
-                      <Text
-                        style={[
-                          styles.blockTypeLabel,
-                          { color: badgePalette.icon },
-                        ]}
-                      >
-                        {block.blockType === 'deep_work'
-                          ? 'DEEP WORK'
-                          : block.blockType === 'work_shift'
-                            ? 'TURNO LABORAL'
-                            : 'PERSONAL'}
-                      </Text>
-                    </View>
-
-                    <Text
-                      style={[styles.blockTitle, { color: theme.textPrimary }]}
-                    >
-                      {block.title}
-                    </Text>
-
-                    {block.locationOrLink ? (
-                      <View style={styles.locationRow}>
-                        <MapPin
-                          size={12}
-                          color={theme.textSecondary}
-                          strokeWidth={iconMetrics.strokeWidth}
-                        />
-                        <Text
-                          style={[
-                            styles.locationText,
-                            { color: theme.textSecondary },
-                          ]}
-                        >
-                          {block.locationOrLink}
-                        </Text>
-                      </View>
-                    ) : null}
-                  </View>
-
-                  <Pressable
-                    onPress={() => removeWorkBlock(block.id)}
-                    hitSlop={10}
-                    style={styles.deleteBtn}
-                  >
-                    <Trash2
-                      size={16}
-                      color={theme.textMuted}
-                      strokeWidth={iconMetrics.strokeWidth}
-                    />
-                  </Pressable>
-                </LiquidGlassCard>
-              );
-            })
-          )}
         </View>
-      </ScrollView>
+      ) : null}
 
+      {/* Modal de Creación / Edición Rápida de Eventos y Bloques */}
+      <CalendarEventModal
+        visible={eventModalVisible}
+        dateKey={selectedDateKey}
+        editingBlock={editingBlock}
+        initialStartTime={modalInitialStart}
+        initialEndTime={modalInitialEnd}
+        onClose={() => setEventModalVisible(false)}
+        onSave={handleSaveEvent}
+        onDelete={(blockId) => {
+          removeWorkBlock(blockId);
+          showToast('Bloque eliminado');
+        }}
+      />
+
+      {/* Pintor de Turnos de Trabajo (1-Tap Shift Painter & Bloque 6x4) */}
+      <ShiftPainterSheet
+        visible={isShiftPainterOpen}
+        selectedDateKey={selectedDateKey}
+        todayKey={todayKey}
+        templates={shiftTemplates}
+        upcomingRestPeriods={upcomingRestPeriods}
+        getShiftBlockForDate={getShiftBlockForDate}
+        onSeedDefaults={seedDefaultShiftTemplatesIfEmpty}
+        onCreateTemplate={createShiftTemplate}
+        onUpdateTemplate={updateShiftTemplate}
+        onDeleteTemplate={deleteShiftTemplate}
+        onPaintDay={paintShiftOnDate}
+        onPaintWeekdays={paintShiftOnWeekdays}
+        onApplyRotation6x4={(config) => {
+          const res = applyRotation6x4Schedule(config);
+          showToast(
+            `Bloque 6×4 agregado · ${res.createdShifts} turnos · ${res.createdRestDays} días libres`
+          );
+          return res;
+        }}
+        onClearFutureShifts={(startKey, horizon) => {
+          const cleared = clearFutureShifts(startKey, horizon);
+          showToast(
+            cleared > 0
+              ? `Se limpiaron ${cleared} registros`
+              : 'No había turnos por limpiar'
+          );
+          return cleared;
+        }}
+        onJumpToDate={(dateKey) => setSelectedDateKey(dateKey)}
+        onClose={() => setIsShiftPainterOpen(false)}
+      />
+
+      {/* Modal Posponer Recordatorio */}
       <SnoozeMenuModal
         visible={Boolean(snoozeTargetTask)}
         task={snoozeTargetTask}
@@ -603,21 +450,25 @@ export default function CalendarScheduleScreen() {
         onSelectPreset={handleSelectSnooze}
       />
 
+      {/* Toast flotante de confirmación */}
       {feedbackToast ? (
-        <View pointerEvents="none" style={styles.toastWrapper}>
+        <View
+          pointerEvents="none"
+          style={[styles.toastWrapper, { bottom: dockClearance + 12 }]}
+        >
           <LiquidGlassCard
             variant="floating"
             intensity={85}
             noPadding
             style={[
               styles.toastPill,
-              { borderColor: theme.accentPrimaryBorder },
+              { borderColor: CALENDAR_COLORS.coralBorder },
             ]}
             contentStyle={styles.toastContent}
           >
             <AlarmSleep
-              size={15}
-              color={theme.accentPrimaryLink}
+              size={14}
+              color={CALENDAR_COLORS.coral}
               strokeWidth={iconMetrics.strokeWidth}
             />
             <Text style={[styles.toastText, { color: theme.textPrimary }]}>
@@ -634,232 +485,59 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
   },
-  scrollContent: {
+  stageContainer: {
+    flex: 1,
     width: '100%',
     maxWidth: 960,
     alignSelf: 'center',
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.md,
-    paddingBottom: 120,
-    gap: spacing.lg,
-  },
-  headerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  headerLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-  },
-  phaseTag: {
-    fontSize: 10,
-    ...typography.eyebrow,
-  },
-  screenTitle: {
-    fontSize: 24,
-    ...typography.screenTitle,
-  },
-  weekStrip: {
-    gap: spacing.sm,
-    paddingVertical: 8,
-    paddingHorizontal: 4,
-    overflow: 'visible',
-  },
-  creatorCard: {
-    borderRadius: radii.lg,
-  },
-  creatorContent: {
-    gap: spacing.sm,
-  },
-  cardSectionTitle: {
-    fontSize: 12,
-    textTransform: 'uppercase',
-    ...typography.eyebrow,
-  },
-  input: {
-    borderWidth: 1,
-    borderRadius: radii.squircle,
     paddingHorizontal: spacing.md,
-    height: 42,
-    fontSize: 14,
-  },
-  timeInputsRow: {
-    flexDirection: 'row',
+    paddingTop: spacing.sm,
     gap: spacing.sm,
   },
-  timeField: {
-    flex: 1,
-    gap: 4,
-  },
-  smallLabel: {
-    fontSize: 11,
-    fontWeight: '600',
-  },
-  timeInput: {
-    borderWidth: 1,
-    borderRadius: radii.squircle,
-    paddingHorizontal: spacing.md,
-    height: 38,
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  typeSelectorRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    alignItems: 'center',
-    gap: spacing.xs,
-    marginTop: 4,
-  },
-  typeChip: {
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-    borderRadius: radii.pill,
-    borderWidth: 1,
-  },
-  typeChipText: {
-    fontSize: 12,
-    fontWeight: '500',
-  },
-  addBlockButton: {
-    marginLeft: 'auto',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: radii.pill,
-  },
-  addBlockButtonText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-  timelineSection: {
-    gap: spacing.sm,
-  },
-  timelineHeader: {
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  blockCard: {
+  ghostPill: {
+    position: 'absolute',
+    width: 196,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
     borderRadius: radii.md,
-  },
-  blockRow: {
+    borderWidth: 1.5,
     flexDirection: 'row',
     alignItems: 'center',
-    padding: spacing.md,
-    gap: spacing.md,
+    gap: 8,
+    zIndex: 120,
+    ...shadows.floatingDock,
   },
-  timeColumn: {
-    width: 48,
-    alignItems: 'flex-end',
-    gap: 2,
+  ghostTextCol: {
+    flex: 1,
+    gap: 1,
   },
-  startTimeText: {
-    fontSize: 14,
+  ghostTitle: {
+    fontSize: 12,
     fontWeight: '700',
   },
-  endTimeText: {
-    fontSize: 12,
-  },
-  verticalAccentBar: {
-    width: 3.5,
-    height: '85%',
-    borderRadius: radii.pill,
-  },
-  blockMainInfo: {
-    flex: 1,
-    gap: 3,
-  },
-  blockTypeBadgeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  blockTypeLabel: {
+  ghostSub: {
     fontSize: 10,
     fontWeight: '700',
-    letterSpacing: 0.6,
-  },
-  blockTitle: {
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  locationRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    marginTop: 2,
-  },
-  locationText: {
-    fontSize: 12,
-  },
-  deleteBtn: {
-    padding: 4,
-  },
-  emptyTimelineCard: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: spacing.xl,
-  },
-  emptyTimelineText: {
-    fontSize: 13,
-    textAlign: 'center',
-    ...typography.body,
-  },
-  reminderRingHit: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: 26,
-  },
-  reminderCheckedCircle: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  overdueTag: {
-    borderRadius: radii.pill,
-    paddingHorizontal: 7,
-    paddingVertical: 1,
-    marginLeft: 2,
-  },
-  overdueTagText: {
-    fontSize: 9,
-    ...typography.bodySemiBold,
-  },
-  snoozePillBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 10,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   toastWrapper: {
     position: 'absolute',
-    bottom: 92,
     left: spacing.lg,
     right: spacing.lg,
     alignItems: 'center',
+    zIndex: 90,
   },
   toastPill: {
     borderRadius: radii.pill,
-    borderWidth: 1,
-    ...shadows.floatingDock,
   },
   toastContent: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 9,
   },
   toastText: {
     fontSize: 13,
-    ...typography.bodySemiBold,
+    fontWeight: '600',
   },
 });

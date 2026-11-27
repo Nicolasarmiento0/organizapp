@@ -218,7 +218,14 @@ export interface WeekDayLensPillProps {
   dayShort: string;
   dayNum: string;
   isSelected: boolean;
+  isToday?: boolean;
   hasActivity?: boolean;
+  activityDots?: {
+    hasEvent?: boolean;
+    hasReminder?: boolean;
+    hasHabit?: boolean;
+  };
+  pillWidth?: number;
   onSelect: (dateKey: string) => void;
   borderRadius: number;
 }
@@ -233,7 +240,10 @@ export const WeekDayLensPill: React.FC<WeekDayLensPillProps> = React.memo(
     dayShort,
     dayNum,
     isSelected,
+    isToday = false,
     hasActivity = false,
+    activityDots,
+    pillWidth = 58,
     onSelect,
     borderRadius,
   }) => {
@@ -295,14 +305,25 @@ export const WeekDayLensPill: React.FC<WeekDayLensPillProps> = React.memo(
           accessibilityState={{ selected: isSelected }}
           style={[
             styles.weekPill,
+            styles.weekPillShadow,
             {
+              width: pillWidth,
               borderRadius,
-              backgroundColor: isSelected ? theme.accentCobalt : theme.card,
-              borderColor: isSelected ? theme.accentCobalt : theme.glassBorder,
+              backgroundColor: isSelected ? theme.accentPrimary : theme.card,
+              borderColor: isSelected
+                ? theme.accentPrimary
+                : isToday
+                  ? theme.accentPrimaryBorder
+                  : theme.glassBorder,
             },
+            isToday && !isSelected && { borderWidth: 1.5 },
+            isSelected && styles.weekPillSelectedGlow,
             webStyle({
               cursor: 'pointer',
               userSelect: 'none',
+              boxShadow: isSelected
+                ? '0 8px 18px rgba(250, 107, 107, 0.34), 0 2px 6px rgba(0, 0, 0, 0.22)'
+                : '0 4px 12px rgba(0, 0, 0, 0.18)',
             }),
           ]}
         >
@@ -366,7 +387,45 @@ export const WeekDayLensPill: React.FC<WeekDayLensPillProps> = React.memo(
             {dayNum}
           </Text>
 
-          {hasActivity && !isSelected ? (
+          {activityDots &&
+          (activityDots.hasEvent ||
+            activityDots.hasReminder ||
+            activityDots.hasHabit) ? (
+            <View style={styles.weekDotsRow}>
+              {activityDots.hasEvent ? (
+                <View
+                  style={[
+                    styles.weekMultiDot,
+                    {
+                      backgroundColor: isSelected
+                        ? 'rgba(255,255,255,0.9)'
+                        : '#8E95A3',
+                    },
+                  ]}
+                />
+              ) : null}
+              {activityDots.hasReminder ? (
+                <View
+                  style={[
+                    styles.weekMultiDot,
+                    {
+                      backgroundColor: isSelected ? '#FFFFFF' : '#FA6B6B',
+                    },
+                  ]}
+                />
+              ) : null}
+              {activityDots.hasHabit ? (
+                <View
+                  style={[
+                    styles.weekMultiDot,
+                    {
+                      backgroundColor: isSelected ? '#A7F3D0' : '#059669',
+                    },
+                  ]}
+                />
+              ) : null}
+            </View>
+          ) : hasActivity && !isSelected ? (
             <View
               style={[
                 styles.weekActivityDot,
@@ -439,6 +498,30 @@ const styles = StyleSheet.create({
     gap: 4,
     position: 'relative',
   },
+  weekPillShadow: Platform.select<ViewStyle>({
+    ios: {
+      shadowColor: '#000000',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.14,
+      shadowRadius: 8,
+    },
+    android: {
+      elevation: 3,
+    },
+    default: {},
+  })!,
+  weekPillSelectedGlow: Platform.select<ViewStyle>({
+    ios: {
+      shadowColor: '#FA6B6B',
+      shadowOffset: { width: 0, height: 6 },
+      shadowOpacity: 0.34,
+      shadowRadius: 12,
+    },
+    android: {
+      elevation: 6,
+    },
+    default: {},
+  })!,
   weekLensOverlay: {
     ...StyleSheet.absoluteFillObject,
     borderWidth: 1.5,
@@ -471,6 +554,20 @@ const styles = StyleSheet.create({
     height: 4,
     borderRadius: 2,
     zIndex: 2,
+  },
+  weekDotsRow: {
+    position: 'absolute',
+    bottom: 5,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 3,
+    zIndex: 2,
+  },
+  weekMultiDot: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
   },
 });
 

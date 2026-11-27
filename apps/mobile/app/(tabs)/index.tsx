@@ -221,6 +221,7 @@ export default function DashboardBentoScreen() {
     goToToday,
     activeDaysInMonth,
     blocksForSelectedDate,
+    allWorkBlocks,
     tasks,
     habits,
     allEnrichedHabits,
@@ -618,9 +619,9 @@ export default function DashboardBentoScreen() {
             { flexDirection: isDesktop ? 'row' : 'column' },
           ]}
         >
-          {/* Tarjeta Hero Resumen del Día */}
+          {/* Tarjeta Hero Resumen del Día (50% en escritorio) */}
           <LiquidGlassCard
-            style={[styles.heroCard, isDesktop && { flex: 1.65 }]}
+            style={[styles.heroCard, isDesktop && { flex: 1 }]}
             contentStyle={styles.heroCardContent}
           >
             <View style={styles.cardHeaderRow}>
@@ -770,13 +771,15 @@ export default function DashboardBentoScreen() {
             </View>
           </LiquidGlassCard>
 
-          {/* Mini Calendario Titanium Tonal */}
+          {/* Calendario Mensual Amplio estilo macOS (mismo espacio 50% que Resumen) */}
           <View style={isDesktop ? { flex: 1 } : undefined}>
             <MiniCalendarBento
               calendarMonth={calendarMonth}
               selectedDateKey={selectedDateKey}
               todayKey={todayKey}
               activeDaysInMonth={activeDaysInMonth}
+              allWorkBlocks={allWorkBlocks}
+              tasks={tasks}
               onSelectDate={setSelectedDateKey}
               onPrevMonth={goToPrevMonth}
               onNextMonth={goToNextMonth}

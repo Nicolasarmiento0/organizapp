@@ -5,6 +5,7 @@ import type {
   HabitLogRecord,
   HabitRewardRecord,
   WorkBlockRecord,
+  ShiftTemplateRecord,
   NotePageRecord,
   SyncChangeset,
   SyncBatchResponse,
@@ -161,10 +162,16 @@ export interface LocalDatabaseEngine {
   upsertHabitReward(record: HabitRewardRecord): void;
   updateHabitReward(id: string, patch: Partial<HabitRewardRecord>): void;
 
+  getAllWorkBlocks(): WorkBlockRecord[];
   getWorkBlocksForDate(dateKey: string): WorkBlockRecord[];
   getWorkBlockById(id: string): WorkBlockRecord | undefined;
   upsertWorkBlock(record: WorkBlockRecord): void;
   updateWorkBlock(id: string, patch: Partial<WorkBlockRecord>): void;
+
+  getShiftTemplates(): ShiftTemplateRecord[];
+  getShiftTemplateById(id: string): ShiftTemplateRecord | undefined;
+  upsertShiftTemplate(record: ShiftTemplateRecord): void;
+  updateShiftTemplate(id: string, patch: Partial<ShiftTemplateRecord>): void;
 
   getNotePages(): NotePageRecord[];
   getDeletedNotePages(): NotePageRecord[];

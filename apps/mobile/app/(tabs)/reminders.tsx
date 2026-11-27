@@ -7,6 +7,7 @@ import {
   Text,
   TextInput,
   View,
+  useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -90,6 +91,9 @@ const SMART_LIST_HEADERS: Record<
 export default function RemindersScreen() {
   const { theme } = useTheme();
   const router = useRouter();
+  const { width } = useWindowDimensions();
+  const isCompactHeader = width < 768;
+  const isVeryNarrow = width < 360;
   const { data: session } = authClient.useSession();
   const activeUserId = resolveActiveUserId(session?.user?.id);
 
@@ -330,6 +334,162 @@ export default function RemindersScreen() {
 
   const sectionHeader = SMART_LIST_HEADERS[activeList];
 
+  const headerIdentity = (
+    <>
+      <MacIconBadge
+        icon={Bell}
+        module="reminders"
+        containerSize={40}
+        size={20}
+      />
+      <View style={styles.headerTitleCol}>
+        <Text
+          numberOfLines={1}
+          style={[styles.overline, { color: theme.accentPrimaryLink }]}
+        >
+          AVISOS & RECORDATORIOS
+        </Text>
+        <Text
+          numberOfLines={1}
+          style={[
+            styles.screenTitle,
+            isVeryNarrow && styles.screenTitleCompact,
+            { color: theme.textPrimary },
+          ]}
+        >
+          Recordatorios
+        </Text>
+      </View>
+    </>
+  );
+
+  const statusPills = (
+    <>
+      {Platform.OS === 'web' && pushSnapshot?.status !== 'unsupported' ? (
+        <Pressable
+          onPress={() => void handleToggleWebPush()}
+          disabled={pushBusy}
+          style={[
+            styles.pushStatusPill,
+            {
+              backgroundColor:
+                pushSnapshot?.status === 'subscribed'
+                  ? theme.accentPrimarySoft
+                  : theme.card,
+              borderColor:
+                pushSnapshot?.status === 'subscribed'
+                  ? theme.accentPrimaryBorder
+                  : theme.glassBorder,
+            },
+            pushBusy && { opacity: 0.6 },
+          ]}
+        >
+          <Bell
+            size={13}
+            color={
+              pushSnapshot?.status === 'subscribed'
+                ? theme.accentPrimaryLink
+                : theme.textSecondary
+            }
+            strokeWidth={2}
+          />
+          <Text
+            style={[
+              styles.summaryPillText,
+              {
+                color:
+                  pushSnapshot?.status === 'subscribed'
+                    ? theme.accentPrimaryLink
+                    : theme.textSecondary,
+              },
+            ]}
+          >
+            {pushBusy
+              ? 'Conectando...'
+              : pushSnapshot?.status === 'subscribed'
+                ? 'Push activo'
+                : pushSnapshot?.status === 'ios_needs_install'
+                  ? 'Instalar PWA'
+                  : pushSnapshot?.status === 'denied'
+                    ? 'Push bloqueado'
+                    : 'Activar Push'}
+          </Text>
+        </Pressable>
+      ) : null}
+
+      {Platform.OS === 'web' && pushSnapshot?.status === 'subscribed' ? (
+        <Pressable
+          onPress={() => void handleTestWebPush()}
+          disabled={pushBusy}
+          style={[
+            styles.pushStatusPill,
+            {
+              backgroundColor: theme.card,
+              borderColor: theme.glassBorder,
+            },
+            pushBusy && { opacity: 0.6 },
+          ]}
+        >
+          <Text
+            style={[
+              styles.summaryPillText,
+              { color: theme.textSecondary },
+            ]}
+          >
+            Probar
+          </Text>
+        </Pressable>
+      ) : null}
+
+      <View
+        style={[
+          styles.summaryPill,
+          {
+            backgroundColor: theme.accentPrimarySoft,
+            borderColor: theme.accentPrimaryBorder,
+          },
+        ]}
+      >
+        <Bell size={13} color={theme.accentPrimaryLink} strokeWidth={2} />
+        <Text
+          style={[
+            styles.summaryPillText,
+            { color: theme.accentPrimaryLink },
+          ]}
+        >
+          {counts.alerts} con aviso · {counts.allPending} pend.
+        </Text>
+      </View>
+    </>
+  );
+
+  const newReminderButton = (
+    <Pressable
+      onPress={openCreateModal}
+      accessibilityRole="button"
+      accessibilityLabel="Nuevo recordatorio"
+      style={({ pressed }) => [
+        styles.newModalBtn,
+        { backgroundColor: theme.accentPrimary },
+        pressed && { opacity: 0.88 },
+      ]}
+    >
+      <Plus
+        size={15}
+        color={theme.accentPrimaryText}
+        strokeWidth={2.2}
+      />
+      <Text
+        style={[
+          styles.newModalBtnText,
+          { color: theme.accentPrimaryText },
+        ]}
+      >
+        Nuevo
+      </Text>
+    </Pressable>
+  );
+
   return (
     <SafeAreaView
       style={[styles.safeArea, { backgroundColor: theme.canvas }]}
@@ -341,145 +501,25 @@ export default function RemindersScreen() {
         keyboardShouldPersistTaps="handled"
       >
         {/* Cabecera estilo macOS */}
-        <View style={styles.headerRow}>
-          <View style={styles.headerLeft}>
-            <MacIconBadge
-              icon={Bell}
-              module="reminders"
-              containerSize={40}
-              size={20}
-            />
-            <View>
-              <Text style={[styles.overline, { color: theme.accentPrimaryLink }]}>
-                AVISOS & RECORDATORIOS
-              </Text>
-              <Text style={[styles.screenTitle, { color: theme.textPrimary }]}>
-                Recordatorios
-              </Text>
+        {isCompactHeader ? (
+          <View style={styles.headerStack}>
+            <View style={styles.headerTopRow}>
+              <View style={[styles.headerLeft, styles.headerLeftCompact]}>
+                {headerIdentity}
+              </View>
+              {newReminderButton}
+            </View>
+            <View style={styles.headerMetaRow}>{statusPills}</View>
+          </View>
+        ) : (
+          <View style={styles.headerRow}>
+            <View style={styles.headerLeft}>{headerIdentity}</View>
+            <View style={styles.headerRight}>
+              {statusPills}
+              {newReminderButton}
             </View>
           </View>
-
-          <View style={styles.headerRight}>
-            {Platform.OS === 'web' && pushSnapshot?.status !== 'unsupported' ? (
-              <Pressable
-                onPress={() => void handleToggleWebPush()}
-                disabled={pushBusy}
-                style={[
-                  styles.pushStatusPill,
-                  {
-                    backgroundColor:
-                      pushSnapshot?.status === 'subscribed'
-                        ? theme.accentPrimarySoft
-                        : theme.card,
-                    borderColor:
-                      pushSnapshot?.status === 'subscribed'
-                        ? theme.accentPrimaryBorder
-                        : theme.glassBorder,
-                  },
-                  pushBusy && { opacity: 0.6 },
-                ]}
-              >
-                <Bell
-                  size={13}
-                  color={
-                    pushSnapshot?.status === 'subscribed'
-                      ? theme.accentPrimaryLink
-                      : theme.textSecondary
-                  }
-                  strokeWidth={2}
-                />
-                <Text
-                  style={[
-                    styles.summaryPillText,
-                    {
-                      color:
-                        pushSnapshot?.status === 'subscribed'
-                          ? theme.accentPrimaryLink
-                          : theme.textSecondary,
-                    },
-                  ]}
-                >
-                  {pushBusy
-                    ? 'Conectando...'
-                    : pushSnapshot?.status === 'subscribed'
-                      ? 'Push activo'
-                      : pushSnapshot?.status === 'ios_needs_install'
-                        ? 'Instalar PWA'
-                        : pushSnapshot?.status === 'denied'
-                          ? 'Push bloqueado'
-                          : 'Activar Push'}
-                </Text>
-              </Pressable>
-            ) : null}
-
-            {Platform.OS === 'web' && pushSnapshot?.status === 'subscribed' ? (
-              <Pressable
-                onPress={() => void handleTestWebPush()}
-                disabled={pushBusy}
-                style={[
-                  styles.pushStatusPill,
-                  {
-                    backgroundColor: theme.card,
-                    borderColor: theme.glassBorder,
-                  },
-                  pushBusy && { opacity: 0.6 },
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.summaryPillText,
-                    { color: theme.textSecondary },
-                  ]}
-                >
-                  Probar
-                </Text>
-              </Pressable>
-            ) : null}
-
-            <View
-              style={[
-                styles.summaryPill,
-                {
-                  backgroundColor: theme.accentPrimarySoft,
-                  borderColor: theme.accentPrimaryBorder,
-                },
-              ]}
-            >
-              <Bell size={13} color={theme.accentPrimaryLink} strokeWidth={2} />
-              <Text
-                style={[
-                  styles.summaryPillText,
-                  { color: theme.accentPrimaryLink },
-                ]}
-              >
-                {counts.alerts} con aviso · {counts.allPending} pend.
-              </Text>
-            </View>
-
-            <Pressable
-              onPress={openCreateModal}
-              style={({ pressed }) => [
-                styles.newModalBtn,
-                { backgroundColor: theme.accentPrimary },
-                pressed && { opacity: 0.88 },
-              ]}
-            >
-              <Plus
-                size={15}
-                color={theme.accentPrimaryText}
-                strokeWidth={2.2}
-              />
-              <Text
-                style={[
-                  styles.newModalBtnText,
-                  { color: theme.accentPrimaryText },
-                ]}
-              >
-                Nuevo
-              </Text>
-            </Pressable>
-          </View>
-        </View>
+        )}
 
         {/* Banner iOS 16.4+ PWA Liquid Glass */}
         <IosPwaInstallBanner
@@ -877,7 +917,26 @@ const styles = StyleSheet.create({
     paddingBottom: 120,
     gap: spacing.lg,
   },
+  headerStack: {
+    width: '100%',
+    gap: spacing.sm,
+  },
+  headerTopRow: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+  },
+  headerMetaRow: {
+    width: '100%',
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
   headerRow: {
+    width: '100%',
     flexDirection: 'row',
     flexWrap: 'wrap',
     alignItems: 'center',
@@ -888,8 +947,19 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
+    flexShrink: 1,
+    minWidth: 0,
+  },
+  headerLeftCompact: {
+    flex: 1,
+  },
+  headerTitleCol: {
+    flexShrink: 1,
+    minWidth: 0,
   },
   headerRight: {
+    maxWidth: '100%',
+    flexShrink: 1,
     flexDirection: 'row',
     flexWrap: 'wrap',
     alignItems: 'center',
@@ -912,6 +982,9 @@ const styles = StyleSheet.create({
     fontSize: 24,
     ...typography.screenTitle,
   },
+  screenTitleCompact: {
+    fontSize: 20,
+  },
   summaryPill: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -926,6 +999,7 @@ const styles = StyleSheet.create({
     ...typography.bodySemiBold,
   },
   newModalBtn: {
+    flexShrink: 0,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,

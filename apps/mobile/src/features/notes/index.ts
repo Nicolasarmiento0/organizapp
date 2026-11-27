@@ -1,4 +1,5 @@
 export * from './useNotesWorkspace';
+export * from './useNoteHistory';
 export * from './noteIcons';
 export * from './noteTree';
 export * from './noteBlocks';

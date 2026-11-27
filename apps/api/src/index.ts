@@ -16,6 +16,7 @@ import {
   habitLogs,
   habitRewards,
   workBlocks,
+  shiftTemplates,
   notePages,
   pushSubscriptions,
   type SyncPushRequest,
@@ -362,12 +363,102 @@ app.post('/api/sync', async (c) => {
       }
     }
 
-    // 4. Upsert Bloques de Horario / Time-Blocking (Fase 2)
-    for (const item of incoming.workBlocks ?? []) {
+    // 4. Upsert Bloques de Horario / Time-Blocking (Batch optimizado para rotaciones anuales 6x4)
+    const incomingWorkBlocks = incoming.workBlocks ?? [];
+    if (incomingWorkBlocks.length > 0) {
+      const existingWorkBlockMap = new Map<
+        string,
+        { userId: string; updatedAt: number }
+      >();
+      const workBlockIds = Array.from(
+        new Set(incomingWorkBlocks.map((b) => b.id))
+      );
+
+      for (let i = 0; i < workBlockIds.length; i += 80) {
+        const idChunk = workBlockIds.slice(i, i + 80);
+        const rows = await db
+          .select({
+            id: workBlocks.id,
+            userId: workBlocks.userId,
+            updatedAt: workBlocks.updatedAt,
+          })
+          .from(workBlocks)
+          .where(inArray(workBlocks.id, idChunk))
+          .all();
+        for (const row of rows) {
+          existingWorkBlockMap.set(row.id, {
+            userId: row.userId,
+            updatedAt: row.updatedAt,
+          });
+        }
+      }
+
+      const pendingUpserts = [];
+      for (const item of incomingWorkBlocks) {
+        const existing = existingWorkBlockMap.get(item.id);
+        if (existing && existing.userId !== user.id) {
+          continue;
+        }
+        if (!existing || (item.updatedAt ?? 0) >= existing.updatedAt) {
+          const canonicalUpdatedAt = Math.max(
+            serverTimestamp,
+            item.updatedAt || serverTimestamp
+          );
+          maxWrittenUpdatedAt = Math.max(maxWrittenUpdatedAt, canonicalUpdatedAt);
+          const sanitized = {
+            id: item.id,
+            userId: user.id,
+            title: item.title,
+            blockType: item.blockType ?? 'deep_work',
+            dateKey: item.dateKey,
+            startTime: item.startTime,
+            endTime: item.endTime,
+            isAllDay: Boolean(item.isAllDay),
+            alertMinutesBefore: item.alertMinutesBefore ?? null,
+            notificationId: item.notificationId ?? null,
+            color: item.color ?? null,
+            linkedTaskId: item.linkedTaskId ?? null,
+            locationOrLink: item.locationOrLink ?? null,
+            isRecurring: Boolean(item.isRecurring),
+            recurrenceDays: item.recurrenceDays ?? null,
+            isDirty: false,
+            deletedAt: item.deletedAt ?? null,
+            createdAt: item.createdAt || canonicalUpdatedAt,
+            updatedAt: canonicalUpdatedAt,
+          };
+          pendingUpserts.push(
+            db
+              .insert(workBlocks)
+              .values(sanitized)
+              .onConflictDoUpdate({
+                target: workBlocks.id,
+                set: sanitized,
+              })
+          );
+          existingWorkBlockMap.set(item.id, {
+            userId: user.id,
+            updatedAt: canonicalUpdatedAt,
+          });
+          acceptedCount += 1;
+        }
+      }
+
+      for (let i = 0; i < pendingUpserts.length; i += 50) {
+        const batchChunk = pendingUpserts.slice(i, i + 50);
+        if (batchChunk.length > 0) {
+          const first = batchChunk[0]!;
+          const rest = batchChunk.slice(1);
+          await db.batch([first, ...rest]);
+        }
+      }
+    }
+
+    // 4b. Upsert Plantillas de Turnos de Trabajo (1-Tap Shift Painter)
+    for (const item of incoming.shiftTemplates ?? []) {
       const existing = await db
-        .select({ userId: workBlocks.userId, updatedAt: workBlocks.updatedAt })
-        .from(workBlocks)
-        .where(eq(workBlocks.id, item.id))
+        .select({ userId: shiftTemplates.userId, updatedAt: shiftTemplates.updatedAt })
+        .from(shiftTemplates)
+        .where(eq(shiftTemplates.id, item.id))
         .get();
 
       if (existing && existing.userId !== user.id) {
@@ -380,24 +471,23 @@ app.post('/api/sync', async (c) => {
         const sanitized = {
           id: item.id,
           userId: user.id,
-          title: item.title,
-          blockType: item.blockType ?? 'deep_work',
-          dateKey: item.dateKey,
+          name: item.name,
           startTime: item.startTime,
           endTime: item.endTime,
+          color: item.color ?? '#7C3AED',
+          alertMinutesBefore: item.alertMinutesBefore ?? null,
           locationOrLink: item.locationOrLink ?? null,
-          isRecurring: Boolean(item.isRecurring),
-          recurrenceDays: item.recurrenceDays ?? null,
+          sortOrder: item.sortOrder ?? 0,
           isDirty: false,
           deletedAt: item.deletedAt ?? null,
           createdAt: item.createdAt || canonicalUpdatedAt,
           updatedAt: canonicalUpdatedAt,
         };
         await db
-          .insert(workBlocks)
+          .insert(shiftTemplates)
           .values(sanitized)
           .onConflictDoUpdate({
-            target: workBlocks.id,
+            target: shiftTemplates.id,
             set: sanitized,
           });
         acceptedCount += 1;
@@ -453,6 +543,7 @@ app.post('/api/sync', async (c) => {
       deltaHabitLogs,
       deltaHabitRewards,
       deltaWorkBlocks,
+      deltaShiftTemplates,
       deltaNotePages,
     ] = await Promise.all([
       db
@@ -502,6 +593,15 @@ app.post('/api/sync', async (c) => {
         .all(),
       db
         .select()
+        .from(shiftTemplates)
+        .where(
+          lastSyncedAt === 0
+            ? eq(shiftTemplates.userId, user.id)
+            : and(eq(shiftTemplates.userId, user.id), gt(shiftTemplates.updatedAt, lastSyncedAt))
+        )
+        .all(),
+      db
+        .select()
         .from(notePages)
         .where(
           lastSyncedAt === 0
@@ -518,6 +618,7 @@ app.post('/api/sync', async (c) => {
       ...deltaHabitLogs,
       ...deltaHabitRewards,
       ...deltaWorkBlocks,
+      ...deltaShiftTemplates,
       ...deltaNotePages,
     ]) {
       if (row.updatedAt > responseTimestamp) {
@@ -536,6 +637,7 @@ app.post('/api/sync', async (c) => {
         deltaHabitLogs.length +
         deltaHabitRewards.length +
         deltaWorkBlocks.length +
+        deltaShiftTemplates.length +
         deltaNotePages.length,
     });
 
@@ -549,6 +651,7 @@ app.post('/api/sync', async (c) => {
         habitLogs: deltaHabitLogs,
         habitRewards: deltaHabitRewards,
         workBlocks: deltaWorkBlocks,
+        shiftTemplates: deltaShiftTemplates,
         notePages: deltaNotePages,
       },
     };
@@ -578,6 +681,7 @@ app.get('/api/sync/pull', async (c) => {
     deltaHabitLogs,
     deltaHabitRewards,
     deltaWorkBlocks,
+    deltaShiftTemplates,
     deltaNotePages,
   ] = await Promise.all([
     db
@@ -627,6 +731,15 @@ app.get('/api/sync/pull', async (c) => {
       .all(),
     db
       .select()
+      .from(shiftTemplates)
+      .where(
+        since === 0
+          ? eq(shiftTemplates.userId, user.id)
+          : and(eq(shiftTemplates.userId, user.id), gt(shiftTemplates.updatedAt, since))
+      )
+      .all(),
+    db
+      .select()
       .from(notePages)
       .where(
         since === 0
@@ -643,6 +756,7 @@ app.get('/api/sync/pull', async (c) => {
     ...deltaHabitLogs,
     ...deltaHabitRewards,
     ...deltaWorkBlocks,
+    ...deltaShiftTemplates,
     ...deltaNotePages,
   ]) {
     if (row.updatedAt > serverTimestamp) {
@@ -660,6 +774,7 @@ app.get('/api/sync/pull', async (c) => {
       habitLogs: deltaHabitLogs,
       habitRewards: deltaHabitRewards,
       workBlocks: deltaWorkBlocks,
+      shiftTemplates: deltaShiftTemplates,
       notePages: deltaNotePages,
     },
   };
@@ -1137,6 +1252,16 @@ app.all('*', async (c) => {
       const headers = new Headers(assetResponse.headers);
       headers.set('Content-Type', 'application/manifest+json; charset=utf-8');
       headers.set('Cache-Control', 'public, max-age=3600');
+      return new Response(assetResponse.body, {
+        status: assetResponse.status,
+        statusText: assetResponse.statusText,
+        headers,
+      });
+    }
+    const contentType = assetResponse.headers.get('content-type') || '';
+    if (contentType.includes('text/html') || c.req.path === '/' || c.req.path === '/index.html') {
+      const headers = new Headers(assetResponse.headers);
+      headers.set('Cache-Control', 'no-cache, no-store, must-revalidate');
       return new Response(assetResponse.body, {
         status: assetResponse.status,
         statusText: assetResponse.statusText,

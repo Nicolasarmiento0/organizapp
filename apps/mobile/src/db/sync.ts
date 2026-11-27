@@ -151,6 +151,7 @@ export function syncWithCloudflareD1(options?: SyncOptions): Promise<boolean> {
         dirtyChangeset.habitLogs.length +
         dirtyChangeset.habitRewards.length +
         dirtyChangeset.workBlocks.length +
+        dirtyChangeset.shiftTemplates.length +
         dirtyChangeset.notePages.length;
 
       const payload: SyncPushRequest = {

@@ -5,6 +5,7 @@ import type {
   HabitLogRecord,
   HabitRewardRecord,
   WorkBlockRecord,
+  ShiftTemplateRecord,
   NotePageRecord,
   SyncChangeset,
   SyncBatchResponse,
@@ -39,6 +40,7 @@ interface CloudCacheState {
   habitLogs: Record<string, HabitLogRecord>;
   habitRewards: Record<string, HabitRewardRecord>;
   workBlocks: Record<string, WorkBlockRecord>;
+  shiftTemplates: Record<string, ShiftTemplateRecord>;
   notePages: Record<string, NotePageRecord>;
 }
 
@@ -50,12 +52,13 @@ let memoryState: CloudCacheState = {
   habitLogs: {},
   habitRewards: {},
   workBlocks: {},
+  shiftTemplates: {},
   notePages: {},
 };
 
 function createEmptyCollections(): Pick<
   CloudCacheState,
-  'tasks' | 'habits' | 'habitLogs' | 'habitRewards' | 'workBlocks' | 'notePages'
+  'tasks' | 'habits' | 'habitLogs' | 'habitRewards' | 'workBlocks' | 'shiftTemplates' | 'notePages'
 > {
   return {
     tasks: {},
@@ -63,6 +66,7 @@ function createEmptyCollections(): Pick<
     habitLogs: {},
     habitRewards: {},
     workBlocks: {},
+    shiftTemplates: {},
     notePages: {},
   };
 }
@@ -114,6 +118,57 @@ function normalizeNotePageRecord(raw: NotePageRecord): NotePageRecord {
     isPinned: Boolean(raw.isPinned),
     sortOrder: raw.sortOrder ?? 0,
   };
+}
+
+function normalizeWorkBlockRecord(raw: WorkBlockRecord): WorkBlockRecord {
+  return {
+    ...raw,
+    isAllDay: Boolean(raw.isAllDay),
+    alertMinutesBefore: raw.alertMinutesBefore ?? null,
+    notificationId: raw.notificationId ?? null,
+    color: raw.color ?? null,
+    linkedTaskId: raw.linkedTaskId ?? null,
+    locationOrLink: raw.locationOrLink ?? null,
+    isRecurring: Boolean(raw.isRecurring),
+    recurrenceDays: raw.recurrenceDays ?? null,
+  };
+}
+
+function normalizeShiftTemplateRecord(raw: ShiftTemplateRecord): ShiftTemplateRecord {
+  return {
+    ...raw,
+    color: raw.color || '#7C3AED',
+    alertMinutesBefore: raw.alertMinutesBefore ?? null,
+    locationOrLink: raw.locationOrLink ?? null,
+    sortOrder: raw.sortOrder ?? 0,
+  };
+}
+
+function parseRecurrenceDaysList(raw?: string | null): number[] {
+  if (!raw) return [1, 2, 3, 4, 5];
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (Array.isArray(parsed)) {
+      const valid = parsed.filter(
+        (n): n is number => typeof n === 'number' && Number.isInteger(n) && n >= 0 && n <= 6
+      );
+      if (valid.length > 0) return valid;
+    }
+  } catch {
+    // Fallback
+  }
+  return [1, 2, 3, 4, 5];
+}
+
+function getDayOfWeekFromKey(dateKey: string): number {
+  const [yStr, mStr, dStr] = dateKey.split('-');
+  const y = Number(yStr);
+  const m = Number(mStr);
+  const d = Number(dStr);
+  if (!Number.isFinite(y) || !Number.isFinite(m) || !Number.isFinite(d)) {
+    return new Date().getDay();
+  }
+  return new Date(y, m - 1, d).getDay();
 }
 
 /**
@@ -203,11 +258,16 @@ export const localStore: LocalDatabaseEngine = {
       };
     }
     for (const remoteBlock of response.changes.workBlocks ?? []) {
-      nextCollections.workBlocks[remoteBlock.id] = {
+      nextCollections.workBlocks[remoteBlock.id] = normalizeWorkBlockRecord({
         ...remoteBlock,
-        isRecurring: Boolean(remoteBlock.isRecurring),
         isDirty: false,
-      };
+      });
+    }
+    for (const remoteTpl of response.changes.shiftTemplates ?? []) {
+      nextCollections.shiftTemplates[remoteTpl.id] = normalizeShiftTemplateRecord({
+        ...remoteTpl,
+        isDirty: false,
+      });
     }
     for (const remoteNote of response.changes.notePages ?? []) {
       nextCollections.notePages[remoteNote.id] = normalizeNotePageRecord({
@@ -327,40 +387,84 @@ export const localStore: LocalDatabaseEngine = {
     memoryState.habitRewards[id] = { ...existing, ...patch };
   },
 
+  getAllWorkBlocks(): WorkBlockRecord[] {
+    return Object.values(memoryState.workBlocks)
+      .filter((b) => !b.deletedAt)
+      .map(normalizeWorkBlockRecord)
+      .sort((a, b) => {
+        if (a.dateKey !== b.dateKey) return a.dateKey.localeCompare(b.dateKey);
+        return a.startTime.localeCompare(b.startTime);
+      });
+  },
+
   getWorkBlocksForDate(dateKey: string): WorkBlockRecord[] {
-    const allActive = Object.values(memoryState.workBlocks).filter((b) => !b.deletedAt);
-    const exactRows = allActive
-      .filter((b) => b.dateKey === dateKey)
-      .sort((a, b) => a.startTime.localeCompare(b.startTime));
+    const allActive = Object.values(memoryState.workBlocks)
+      .filter((b) => !b.deletedAt)
+      .map(normalizeWorkBlockRecord);
+    const exactRows = allActive.filter((b) => b.dateKey === dateKey);
+    const exactIds = new Set(exactRows.map((b) => b.id));
+    const dow = getDayOfWeekFromKey(dateKey);
 
-    if (exactRows.length > 0) {
-      return exactRows;
-    }
+    const recurringRows = allActive.filter(
+      (b) =>
+        b.isRecurring &&
+        !exactIds.has(b.id) &&
+        b.dateKey <= dateKey &&
+        parseRecurrenceDaysList(b.recurrenceDays).includes(dow)
+    );
 
-    return allActive
-      .filter((b) => b.isRecurring)
-      .sort((a, b) => a.startTime.localeCompare(b.startTime));
+    return [...exactRows, ...recurringRows].sort((a, b) => {
+      if (a.isAllDay !== b.isAllDay) return a.isAllDay ? -1 : 1;
+      return a.startTime.localeCompare(b.startTime);
+    });
   },
 
   getWorkBlockById(id: string): WorkBlockRecord | undefined {
-    return memoryState.workBlocks[id];
+    const found = memoryState.workBlocks[id];
+    return found ? normalizeWorkBlockRecord(found) : undefined;
   },
 
   upsertWorkBlock(record: WorkBlockRecord): void {
-    memoryState.workBlocks[record.id] = {
-      ...record,
-      isRecurring: Boolean(record.isRecurring),
-    };
+    memoryState.workBlocks[record.id] = normalizeWorkBlockRecord({ ...record });
   },
 
   updateWorkBlock(id: string, patch: Partial<WorkBlockRecord>): void {
     const existing = memoryState.workBlocks[id];
     if (!existing) return;
-    memoryState.workBlocks[id] = {
+    memoryState.workBlocks[id] = normalizeWorkBlockRecord({
       ...existing,
       ...patch,
-      isRecurring: Boolean(patch.isRecurring ?? existing.isRecurring),
-    };
+    });
+  },
+
+  getShiftTemplates(): ShiftTemplateRecord[] {
+    return Object.values(memoryState.shiftTemplates)
+      .filter((t) => !t.deletedAt)
+      .map(normalizeShiftTemplateRecord)
+      .sort((a, b) => {
+        if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
+        return a.createdAt - b.createdAt;
+      });
+  },
+
+  getShiftTemplateById(id: string): ShiftTemplateRecord | undefined {
+    const found = memoryState.shiftTemplates[id];
+    return found ? normalizeShiftTemplateRecord(found) : undefined;
+  },
+
+  upsertShiftTemplate(record: ShiftTemplateRecord): void {
+    memoryState.shiftTemplates[record.id] = normalizeShiftTemplateRecord({
+      ...record,
+    });
+  },
+
+  updateShiftTemplate(id: string, patch: Partial<ShiftTemplateRecord>): void {
+    const existing = memoryState.shiftTemplates[id];
+    if (!existing) return;
+    memoryState.shiftTemplates[id] = normalizeShiftTemplateRecord({
+      ...existing,
+      ...patch,
+    });
   },
 
   getNotePages(): NotePageRecord[] {
@@ -407,6 +511,7 @@ export const localStore: LocalDatabaseEngine = {
       habitLogs: Object.values(memoryState.habitLogs).filter((r) => r.isDirty),
       habitRewards: Object.values(memoryState.habitRewards).filter((r) => r.isDirty),
       workBlocks: Object.values(memoryState.workBlocks).filter((r) => r.isDirty),
+      shiftTemplates: Object.values(memoryState.shiftTemplates).filter((r) => r.isDirty),
       notePages: Object.values(memoryState.notePages).filter((r) => r.isDirty),
     };
   },
@@ -419,6 +524,7 @@ export const localStore: LocalDatabaseEngine = {
       dirty.habitLogs.length +
       dirty.habitRewards.length +
       dirty.workBlocks.length +
+      dirty.shiftTemplates.length +
       dirty.notePages.length
     );
   },
@@ -450,6 +556,12 @@ export const localStore: LocalDatabaseEngine = {
     }
     for (const item of sent.workBlocks) {
       const current = memoryState.workBlocks[item.id];
+      if (current && current.updatedAt === item.updatedAt) {
+        current.isDirty = false;
+      }
+    }
+    for (const item of sent.shiftTemplates) {
+      const current = memoryState.shiftTemplates[item.id];
       if (current && current.updatedAt === item.updatedAt) {
         current.isDirty = false;
       }
@@ -532,19 +644,34 @@ export const localStore: LocalDatabaseEngine = {
     for (const remoteBlock of response.changes.workBlocks ?? []) {
       const localRow = memoryState.workBlocks[remoteBlock.id];
       if (!localRow) {
-        memoryState.workBlocks[remoteBlock.id] = {
+        memoryState.workBlocks[remoteBlock.id] = normalizeWorkBlockRecord({
           ...remoteBlock,
-          isRecurring: Boolean(remoteBlock.isRecurring),
           isDirty: false,
-        };
+        });
       } else if (localRow.isDirty) {
         localRow.updatedAt = Math.max(localRow.updatedAt, remoteBlock.updatedAt + 1);
       } else if (remoteBlock.updatedAt >= localRow.updatedAt) {
-        memoryState.workBlocks[remoteBlock.id] = {
+        memoryState.workBlocks[remoteBlock.id] = normalizeWorkBlockRecord({
           ...remoteBlock,
-          isRecurring: Boolean(remoteBlock.isRecurring),
           isDirty: false,
-        };
+        });
+      }
+    }
+
+    for (const remoteTpl of response.changes.shiftTemplates ?? []) {
+      const localRow = memoryState.shiftTemplates[remoteTpl.id];
+      if (!localRow) {
+        memoryState.shiftTemplates[remoteTpl.id] = normalizeShiftTemplateRecord({
+          ...remoteTpl,
+          isDirty: false,
+        });
+      } else if (localRow.isDirty) {
+        localRow.updatedAt = Math.max(localRow.updatedAt, remoteTpl.updatedAt + 1);
+      } else if (remoteTpl.updatedAt >= localRow.updatedAt) {
+        memoryState.shiftTemplates[remoteTpl.id] = normalizeShiftTemplateRecord({
+          ...remoteTpl,
+          isDirty: false,
+        });
       }
     }
 
