@@ -25,6 +25,7 @@ import {
 import { iconMetrics, radii, spacing, typography } from '../../src/theme/tokens';
 import { useTheme } from '../../src/theme/ThemeContext';
 import { LiquidGlassCard } from '../../src/components/glass/LiquidGlassCard';
+import { AppLogo } from '../../src/components/brand/AppLogo';
 import { API_BASE_URL, authClient } from '../../src/services/authClient';
 import { hydrateWorkspaceFromCloud } from '../../src/db/sync';
 
@@ -266,17 +267,10 @@ export default function LoginScreen() {
         >
           {/* Barra superior discreta */}
           <View style={styles.topBar}>
-            <View
-              style={[
-                styles.brandMonogram,
-                {
-                  backgroundColor: theme.card,
-                  borderColor: theme.glassBorder,
-                },
-              ]}
-            >
-              <Text style={[styles.brandMonogramText, { color: theme.textPrimary }]}>
-                O
+            <View style={styles.brandLockup}>
+              <AppLogo size={42} />
+              <Text style={[styles.brandTitle, { color: theme.textPrimary }]}>
+                Organiza
               </Text>
             </View>
 
@@ -587,19 +581,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.sm,
   },
-  brandMonogram: {
-    width: 44,
-    height: 44,
-    borderRadius: radii.squircle,
-    borderCurve: 'continuous',
-    borderWidth: 1,
+  brandLockup: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    gap: spacing.sm,
   },
-  brandMonogramText: {
-    fontSize: 19,
-    fontWeight: '800',
-    letterSpacing: -0.5,
+  brandTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    letterSpacing: -0.4,
   },
   healthPill: {
     flexDirection: 'row',

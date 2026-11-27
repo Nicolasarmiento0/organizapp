@@ -49,6 +49,7 @@ import { useTheme } from '../../src/theme/ThemeContext';
 import { LiquidGlassCard } from '../../src/components/glass/LiquidGlassCard';
 import { LiquidGlassBubble } from '../../src/components/glass/LiquidGlassBubble';
 import { MacIconBadge } from '../../src/components/glass/MacIconBadge';
+import { AppLogo } from '../../src/components/brand/AppLogo';
 import { useQuickCapture } from '../../src/components/glass/QuickCaptureContext';
 import { useAccountSheet } from '../../src/components/auth/AccountSheet';
 import {
@@ -363,13 +364,16 @@ export default function DashboardBentoScreen() {
       >
         {/* 1. HEADER SUPERIOR */}
         <View style={styles.headerRow}>
-          <View style={styles.greetingCol}>
-            <Text style={[styles.greetingTitle, { color: theme.textPrimary }]}>
-              Hola, {firstName}
-            </Text>
-            <Text style={[styles.greetingSub, { color: theme.textSecondary }]}>
-              {formatHeaderDate()} · Listo para tus retos de hoy
-            </Text>
+          <View style={styles.greetingRow}>
+            {!isDesktop ? <AppLogo size={42} /> : null}
+            <View style={styles.greetingCol}>
+              <Text style={[styles.greetingTitle, { color: theme.textPrimary }]}>
+                Hola, {firstName}
+              </Text>
+              <Text style={[styles.greetingSub, { color: theme.textSecondary }]}>
+                {formatHeaderDate()} · Listo para tus retos de hoy
+              </Text>
+            </View>
           </View>
 
           <View style={styles.headerControls}>
@@ -1528,6 +1532,11 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     alignItems: 'center',
     justifyContent: 'space-between',
+    gap: spacing.md,
+  },
+  greetingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: spacing.md,
   },
   greetingCol: {

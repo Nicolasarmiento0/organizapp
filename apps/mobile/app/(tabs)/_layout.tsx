@@ -30,6 +30,7 @@ import {
 } from '../../src/theme/tokens';
 import { useTheme } from '../../src/theme/ThemeContext';
 import { LiquidGlassCard } from '../../src/components/glass/LiquidGlassCard';
+import { AppLogo } from '../../src/components/brand/AppLogo';
 import {
   LiquidGlassRailCapsule,
   type RailCapsuleItem,
@@ -209,8 +210,22 @@ function DesktopIconRail({
 
   return (
     <View style={[styles.railColumn, { backgroundColor: theme.canvas }]}>
-      {/* Cápsula vertical principal con burbuja Liquid Glass deslizante */}
-      <LiquidGlassRailCapsule items={navItems} shadowStyle={shadows.floatingDock} />
+      <View style={styles.railTopGroup}>
+        <Pressable
+          onPress={() => router.push('/(tabs)')}
+          accessibilityRole="button"
+          accessibilityLabel="Organiza · Ir al inicio"
+          style={({ pressed }) => [
+            styles.railLogoBtn,
+            pressed && { opacity: 0.82 },
+          ]}
+        >
+          <AppLogo size={42} />
+        </Pressable>
+
+        {/* Cápsula vertical principal con burbuja Liquid Glass deslizante */}
+        <LiquidGlassRailCapsule items={navItems} shadowStyle={shadows.floatingDock} />
+      </View>
 
       {/* Cápsula inferior de utilidades con burbuja Liquid Glass deslizante */}
       <LiquidGlassRailCapsule items={utilityItems} shadowStyle={shadows.subtle} />
@@ -382,6 +397,16 @@ const styles = StyleSheet.create({
     paddingVertical: 20,
     alignItems: 'center',
     justifyContent: 'space-between',
+  },
+  railTopGroup: {
+    alignItems: 'center',
+    gap: 14,
+  },
+  railLogoBtn: {
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   railInitials: {
     fontSize: 13,

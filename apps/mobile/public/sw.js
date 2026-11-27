@@ -30,8 +30,8 @@ self.addEventListener('push', (event) => {
 
   const options = {
     body: payload.body,
-    icon: '/icons/icon-192.png',
-    badge: '/icons/icon-192.png',
+    icon: '/icons/icon-192.png?v=2',
+    badge: '/icons/icon-192.png?v=2',
     tag: payload.tag || (payload.taskId ? `reminder-${payload.taskId}` : 'organiza-reminder'),
     renotify: true,
     data: {

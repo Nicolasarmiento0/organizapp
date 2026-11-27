@@ -17,6 +17,7 @@ import {
   Inter_700Bold,
 } from '@expo-google-fonts/inter';
 import { ThemeProvider, useTheme } from '../src/theme/ThemeContext';
+import { AppLogo } from '../src/components/brand/AppLogo';
 import { clearLegacyLocalStorageData } from '../src/db/client';
 import {
   hydrateWorkspaceFromCloud,
@@ -26,7 +27,7 @@ import {
 import { authClient } from '../src/services/authClient';
 import { configureLocalNotifications } from '../src/services/notifications';
 import { registerPwaServiceWorker } from '../src/services/webPush';
-import { radii, spacing } from '../src/theme/tokens';
+import { spacing } from '../src/theme/tokens';
 
 // Limpieza de claves heredadas y configuración de notificaciones al iniciar
 clearLegacyLocalStorageData();
@@ -134,19 +135,7 @@ function RootNavigator() {
               { backgroundColor: theme.canvas },
             ]}
           >
-            <View
-              style={[
-                styles.loadingMonogram,
-                {
-                  backgroundColor: theme.card,
-                  borderColor: theme.glassBorder,
-                },
-              ]}
-            >
-              <Text style={[styles.loadingMonogramText, { color: theme.textPrimary }]}>
-                O
-              </Text>
-            </View>
+            <AppLogo size={58} />
             <ActivityIndicator size="small" color={theme.accentPrimaryLink} />
             <Text style={[styles.loadingText, { color: theme.textSecondary }]}>
               Sincronizando tu workspace...
@@ -287,20 +276,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: spacing.md,
     zIndex: 50,
-  },
-  loadingMonogram: {
-    width: 52,
-    height: 52,
-    borderRadius: radii.squircle,
-    borderCurve: 'continuous',
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  loadingMonogramText: {
-    fontSize: 22,
-    fontWeight: '800',
-    letterSpacing: -0.5,
   },
   loadingText: {
     fontSize: 13,

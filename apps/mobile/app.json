@@ -4,10 +4,13 @@
     "slug": "organiza-app",
     "version": "1.0.0",
     "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
     "scheme": "organizaapp",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "splash": {
+      "image": "./assets/images/logo.png",
+      "resizeMode": "contain",
       "backgroundColor": "#F5F5F7"
     },
     "ios": {
@@ -20,7 +23,8 @@
     "android": {
       "package": "com.nico.organizaapp",
       "adaptiveIcon": {
-        "backgroundColor": "#F5F5F7"
+        "foregroundImage": "./assets/images/adaptive-icon.png",
+        "backgroundColor": "#14161A"
       }
     },
     "web": {

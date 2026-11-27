@@ -19,6 +19,7 @@ import {
 import { iconMetrics, radii, shadows, spacing, typography } from '../../theme/tokens';
 import { useTheme } from '../../theme/ThemeContext';
 import { LiquidGlassCard } from '../glass/LiquidGlassCard';
+import { AppLogo } from '../brand/AppLogo';
 import {
   authClient,
   getUserInitials,
@@ -121,9 +122,12 @@ export const AccountSheet: React.FC<{
         >
           {/* Header */}
           <View style={styles.headerRow}>
-            <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>
-              Cuenta & Sincronización
-            </Text>
+            <View style={styles.headerBrandRow}>
+              <AppLogo size={26} />
+              <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>
+                Cuenta & Sincronización
+              </Text>
+            </View>
             <Pressable
               onPress={onClose}
               style={[styles.closeButton, { backgroundColor: theme.pillBg }]}
@@ -344,6 +348,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+  },
+  headerBrandRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
   },
   headerTitle: {
     fontSize: 17,
