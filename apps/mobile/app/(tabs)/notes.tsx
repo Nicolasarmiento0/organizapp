@@ -46,7 +46,9 @@ import {
   computeNoteMetrics,
   createBlock,
   getDirectChildren,
+  getNoteDisplayTitle,
   loadBlocksForPage,
+  normalizeEditableNoteTitle,
   NoteBlockEditor,
   NoteIconPickerModal,
   NoteMoveModal,
@@ -96,7 +98,9 @@ export default function NotesWorkspaceScreen() {
     searchPages,
   } = useNotesWorkspace(activeUserId);
 
-  const [draftTitle, setDraftTitle] = useState(activePage?.title ?? '');
+  const [draftTitle, setDraftTitle] = useState(
+    activePage ? normalizeEditableNoteTitle(activePage.title) : ''
+  );
   const [draftBlocks, setDraftBlocks] = useState<NoteBlock[]>(() =>
     activePage ? loadBlocksForPage(activePage) : [createBlock('paragraph')]
   );
@@ -138,7 +142,7 @@ export default function NotesWorkspaceScreen() {
 
   useEffect(() => {
     if (activePage) {
-      setDraftTitle(activePage.title);
+      setDraftTitle(normalizeEditableNoteTitle(activePage.title));
       setDraftBlocks(loadBlocksForPage(activePage));
     } else {
       setDraftTitle('');
@@ -344,41 +348,39 @@ export default function NotesWorkspaceScreen() {
   };
 
   const handleCreateRootPage = (customTitle?: string) => {
-    const cleanTitle = customTitle?.trim() || 'Nueva Página';
-    const initialBlocks = [
-      createBlock('h1', { text: cleanTitle }),
-      createBlock('paragraph', { text: '' }),
-    ];
+    const cleanTitle = customTitle?.trim() ?? '';
+    const initialBlocks = [createBlock('paragraph', { text: '' })];
     const created = createPage({
       title: cleanTitle,
       icon: 'FileText',
       blocksJson: JSON.stringify(initialBlocks),
-      contentMarkdown: serializeBlocksToMarkdown(initialBlocks),
+      contentMarkdown: '',
       tags: ['Workspace'],
       isPinned: false,
     });
-    setDraftTitle(created.title);
+    setDraftTitle(normalizeEditableNoteTitle(created.title));
     setDraftBlocks(initialBlocks);
     setMobileDrawerOpen(false);
   };
 
   const handleCreateSubpage = (parentId: string) => {
-    const created = createSubpage(parentId, 'Nueva Subpágina');
-    setDraftTitle(created.title);
+    const created = createSubpage(parentId, '');
+    setDraftTitle(normalizeEditableNoteTitle(created.title));
     setDraftBlocks(loadBlocksForPage(created));
     setMobileDrawerOpen(false);
   };
 
   const handleSelectTemplate = (templateId: NoteTemplateId) => {
     const created = createFromTemplate(templateId, null);
-    setDraftTitle(created.title);
+    setDraftTitle(normalizeEditableNoteTitle(created.title));
     setDraftBlocks(loadBlocksForPage(created));
     setMobileDrawerOpen(false);
   };
 
   const handleCopyFullMarkdown = async () => {
     if (!activePage) return;
-    const exportText = `# ${draftTitle || activePage.title}\n\n${draftMarkdown}`;
+    const exportTitle = draftTitle.trim() || getNoteDisplayTitle(activePage);
+    const exportText = `# ${exportTitle}\n\n${draftMarkdown}`;
     const ok = await copyTextToClipboard(exportText);
     if (ok) {
       setCopiedMarkdown(true);
@@ -641,7 +643,7 @@ export default function NotesWorkspaceScreen() {
                               ]}
                               numberOfLines={1}
                             >
-                              {crumb.title}
+                              {getNoteDisplayTitle(crumb)}
                             </Text>
                           </Pressable>
                         </React.Fragment>
@@ -827,7 +829,9 @@ export default function NotesWorkspaceScreen() {
                     ref={titleInputRef}
                     value={draftTitle}
                     onChangeText={handleTitleChange}
-                    placeholder="Título de la página..."
+                    placeholder={
+                      activePage.parentId ? 'Nueva Subpágina' : 'Título de la página...'
+                    }
                     placeholderTextColor={theme.textMuted}
                     style={[
                       styles.pageTitleInput,
@@ -967,7 +971,7 @@ export default function NotesWorkspaceScreen() {
                                 ]}
                                 numberOfLines={1}
                               >
-                                {child.title}
+                                {getNoteDisplayTitle(child)}
                               </Text>
                               <Text
                                 style={[

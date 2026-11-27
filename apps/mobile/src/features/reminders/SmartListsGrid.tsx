@@ -71,7 +71,7 @@ export const SmartListsGrid: React.FC<SmartListsGridProps> = ({
     {
       key: 'flagged',
       label: 'Urgentes',
-      subtitle: 'Bandera y P3',
+      subtitle: 'Bandera y Alta',
       count: counts.flagged,
       icon: Flag,
       coralHighlightWhenInactive: counts.flagged > 0,

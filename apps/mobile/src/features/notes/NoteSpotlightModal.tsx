@@ -23,7 +23,11 @@ import { radii, shadows, spacing } from '../../theme/tokens';
 import { useTheme } from '../../theme/ThemeContext';
 import { LiquidGlassCard } from '../../components/glass/LiquidGlassCard';
 import { resolveNoteIcon } from './noteIcons';
-import { buildSearchHits, type NoteSearchHit } from './noteTree';
+import {
+  buildSearchHits,
+  getNoteDisplayTitle,
+  type NoteSearchHit,
+} from './noteTree';
 
 export interface NoteSpotlightModalProps {
   visible: boolean;
@@ -285,7 +289,7 @@ export const NoteSpotlightModal: React.FC<NoteSpotlightModalProps> = ({
                             ]}
                             numberOfLines={1}
                           >
-                            {hit.page.title}
+                            {getNoteDisplayTitle(hit.page)}
                           </Text>
                           {hit.page.isPinned ? (
                             <Pin size={12} color={theme.accentPrimaryLink} />

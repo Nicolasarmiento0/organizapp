@@ -16,8 +16,10 @@ import { LiquidGlassCard } from '../../components/glass/LiquidGlassCard';
 import { localStore } from '../../db/client';
 import { iconMetrics, radii, spacing, typography } from '../../theme/tokens';
 import { useTheme } from '../../theme/ThemeContext';
+import { getNoteDisplayTitle } from '../notes';
 import {
   formatReminderScheduleBadge,
+  getPriorityLabel,
   type SnoozePreset,
 } from './reminderUtils';
 
@@ -277,7 +279,7 @@ export const ReminderRowCard: React.FC<ReminderRowCardProps> = ({
                   },
                 ]}
               >
-                P{task.priority}
+                {getPriorityLabel(task.priority)}
               </Text>
             </View>
 
@@ -300,7 +302,7 @@ export const ReminderRowCard: React.FC<ReminderRowCardProps> = ({
                   ]}
                   numberOfLines={1}
                 >
-                  {sourcePage.title}
+                  {getNoteDisplayTitle(sourcePage)}
                 </Text>
               </Pressable>
             ) : null}

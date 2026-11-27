@@ -4,6 +4,12 @@ import { getTodayDateKey } from '../../db/client';
 export type SmartListKey = 'today' | 'scheduled' | 'all' | 'flagged';
 export type AllStatusFilter = 'all' | 'pending' | 'alerts' | 'completed';
 export type PriorityFilter = 'all' | TaskPriority;
+
+export function getPriorityLabel(priority: TaskPriority): 'Alta' | 'Media' | 'Baja' {
+  if (priority === 3) return 'Alta';
+  if (priority === 1) return 'Baja';
+  return 'Media';
+}
 export type QuickDatePreset =
   | 'none'
   | '30m'

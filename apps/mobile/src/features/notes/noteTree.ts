@@ -31,6 +31,28 @@ export interface NoteMetrics {
   charCount: number;
 }
 
+const EDITABLE_PLACEHOLDER_TITLES = new Set([
+  'Nueva Subpágina',
+  'Nueva Página',
+  'Página sin título',
+]);
+
+export function getNoteDisplayTitle(
+  page: Pick<NotePageRecord, 'title' | 'parentId'>
+): string {
+  const clean = page.title.trim();
+  if (clean) return clean;
+  return page.parentId ? 'Nueva Subpágina' : 'Página sin título';
+}
+
+export function normalizeEditableNoteTitle(title: string): string {
+  const clean = title.trim();
+  if (!clean || EDITABLE_PLACEHOLDER_TITLES.has(clean)) {
+    return '';
+  }
+  return title;
+}
+
 function compareNoteSiblings(a: NotePageRecord, b: NotePageRecord): number {
   if (a.isPinned !== b.isPinned) return a.isPinned ? -1 : 1;
   if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
@@ -250,7 +272,7 @@ export function buildSearchHits(
 
   return matchedPages.map((page) => {
     const trail = getBreadcrumbTrail(allPages, page.id);
-    const breadcrumb = trail.slice(0, -1).map((p) => p.title);
+    const breadcrumb = trail.slice(0, -1).map((p) => getNoteDisplayTitle(p));
     const titleNorm = normalizeSearchText(page.title);
     const matchedInTitle =
       tokens.length > 0 && tokens.some((tok) => titleNorm.includes(tok));

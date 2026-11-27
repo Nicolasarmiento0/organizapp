@@ -36,7 +36,10 @@ import {
   insertTaskOfflineFirst,
 } from '../../features/today';
 import { insertWorkBlockOfflineFirst } from '../../features/calendar';
-import { insertNotePageOfflineFirst } from '../../features/notes';
+import {
+  createBlock,
+  insertNotePageOfflineFirst,
+} from '../../features/notes';
 
 export type QuickCaptureMode = 'task' | 'habit' | 'schedule' | 'note';
 
@@ -129,9 +132,13 @@ export const QuickCaptureSheet: React.FC<QuickCaptureSheetProps> = ({
         userId,
       });
     } else if (mode === 'note') {
+      const cleanBody = notesOrMarkdown.trim();
       insertNotePageOfflineFirst({
         title: cleanTitle,
-        contentMarkdown: notesOrMarkdown || `# ${cleanTitle}\n\n`,
+        contentMarkdown: cleanBody ? notesOrMarkdown : '',
+        blocksJson: cleanBody
+          ? null
+          : JSON.stringify([createBlock('paragraph', { text: '' })]),
         isPinned: false,
         userId,
       });

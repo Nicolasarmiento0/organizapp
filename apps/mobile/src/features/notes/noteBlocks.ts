@@ -252,6 +252,35 @@ export function serializeBlocksToMarkdown(blocks: NoteBlock[]): string {
   return parts.join('\n\n');
 }
 
+export const LEGACY_PLACEHOLDER_BODY =
+  'Escribe ideas, checklists o documentación...';
+
+export const LEGACY_PLACEHOLDER_TITLES = new Set([
+  'Nueva Subpágina',
+  'Nueva Página',
+]);
+
+export function sanitizeLegacyPlaceholderBlocks(
+  blocks: NoteBlock[]
+): NoteBlock[] {
+  let cleaned = blocks.map((block) =>
+    block.type === 'paragraph' && block.text.trim() === LEGACY_PLACEHOLDER_BODY
+      ? { ...block, text: '' }
+      : block
+  );
+
+  if (
+    cleaned[0]?.type === 'h1' &&
+    LEGACY_PLACEHOLDER_TITLES.has(cleaned[0].text.trim())
+  ) {
+    cleaned = cleaned.slice(1);
+  }
+
+  return cleaned.length > 0
+    ? cleaned
+    : [createBlock('paragraph', { text: '' })];
+}
+
 export function loadBlocksForPage(
   page: Pick<NotePageRecord, 'blocksJson' | 'contentMarkdown'>
 ): NoteBlock[] {
@@ -259,32 +288,36 @@ export function loadBlocksForPage(
     try {
       const parsed = JSON.parse(page.blocksJson) as unknown;
       if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed.map((raw) => {
-          const item = (raw && typeof raw === 'object' ? raw : {}) as Partial<NoteBlock>;
-          const type: NoteBlockType =
-            item.type &&
-            [
-              'paragraph',
-              'h1',
-              'h2',
-              'h3',
-              'checklist',
-              'callout',
-              'code',
-              'divider',
-              'image',
-            ].includes(item.type)
-              ? item.type
-              : 'paragraph';
-          return createBlock(type, item);
-        });
+        return sanitizeLegacyPlaceholderBlocks(
+          parsed.map((raw) => {
+            const item = (raw && typeof raw === 'object' ? raw : {}) as Partial<NoteBlock>;
+            const type: NoteBlockType =
+              item.type &&
+              [
+                'paragraph',
+                'h1',
+                'h2',
+                'h3',
+                'checklist',
+                'callout',
+                'code',
+                'divider',
+                'image',
+              ].includes(item.type)
+                ? item.type
+                : 'paragraph';
+            return createBlock(type, item);
+          })
+        );
       }
     } catch {
       // Fallback directo a Markdown
     }
   }
 
-  return parseMarkdownToBlocks(page.contentMarkdown);
+  return sanitizeLegacyPlaceholderBlocks(
+    parseMarkdownToBlocks(page.contentMarkdown)
+  );
 }
 
 /**

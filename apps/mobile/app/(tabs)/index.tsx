@@ -61,11 +61,13 @@ import {
   resolveBadgeIcon,
 } from '../../src/features/habits';
 import {
+  getNoteDisplayTitle,
   insertNotePageOfflineFirst,
   instantiateNoteTemplate,
   resolveNoteIcon,
   type NoteTemplateId,
 } from '../../src/features/notes';
+import { getPriorityLabel } from '../../src/features/reminders';
 import {
   subscribeSyncStatus,
   syncWithCloudflareD1,
@@ -1205,7 +1207,7 @@ export default function DashboardBentoScreen() {
                                 },
                               ]}
                             >
-                              P{task.priority}
+                              {getPriorityLabel(task.priority)}
                             </Text>
                           </Pressable>
 
@@ -1263,7 +1265,7 @@ export default function DashboardBentoScreen() {
                               ]}
                               numberOfLines={1}
                             >
-                              Nota: {sourceNote.title}
+                              Nota: {getNoteDisplayTitle(sourceNote)}
                             </Text>
                           </Pressable>
                         ) : (
@@ -1413,7 +1415,7 @@ export default function DashboardBentoScreen() {
                             style={[styles.noteTitle, { color: theme.textPrimary }]}
                             numberOfLines={1}
                           >
-                            {page.title}
+                            {getNoteDisplayTitle(page)}
                           </Text>
                         </View>
                         <Text

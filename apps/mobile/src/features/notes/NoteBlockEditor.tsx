@@ -91,13 +91,144 @@ const CODE_FONT = Platform.select({
   default: 'monospace',
 });
 
-function syncWebTextareaHeight(node: TextInput | null, minHeight = 0) {
-  if (Platform.OS !== 'web' || !node) return;
-  const el = node as unknown as HTMLTextAreaElement | null;
-  if (!el || el.tagName !== 'TEXTAREA' || !el.style) return;
-  el.style.overflow = 'hidden';
-  el.style.height = '0px';
-  el.style.height = `${Math.max(el.scrollHeight, minHeight)}px`;
+interface ScrollSnapshotItem {
+  node: HTMLElement;
+  top: number;
+  left: number;
+}
+
+interface ScrollSnapshot {
+  ancestors: ScrollSnapshotItem[];
+  windowX: number;
+  windowY: number;
+}
+
+const textareaMeasureCache = new WeakMap<
+  HTMLTextAreaElement,
+  { value: string; width: number; minHeight: number; height: number }
+>();
+
+function captureScrollSnapshots(root: HTMLElement | null): ScrollSnapshot {
+  const ancestors: ScrollSnapshotItem[] = [];
+  if (typeof window === 'undefined') {
+    return { ancestors, windowX: 0, windowY: 0 };
+  }
+
+  let cur: HTMLElement | null = root;
+  while (cur) {
+    const style = window.getComputedStyle(cur);
+    const isScrollable =
+      /(auto|scroll|overlay)/.test(style.overflowY) ||
+      /(auto|scroll|overlay)/.test(style.overflowX) ||
+      cur.scrollTop > 0 ||
+      cur.scrollLeft > 0;
+    if (
+      isScrollable &&
+      (cur.scrollHeight > cur.clientHeight ||
+        cur.scrollWidth > cur.clientWidth ||
+        cur.scrollTop > 0 ||
+        cur.scrollLeft > 0)
+    ) {
+      ancestors.push({
+        node: cur,
+        top: cur.scrollTop,
+        left: cur.scrollLeft,
+      });
+    }
+    cur = cur.parentElement;
+  }
+
+  return {
+    ancestors,
+    windowX: window.scrollX,
+    windowY: window.scrollY,
+  };
+}
+
+function restoreScrollSnapshots(snapshot: ScrollSnapshot) {
+  if (typeof window === 'undefined') return;
+  for (const item of snapshot.ancestors) {
+    if (item.node.scrollTop !== item.top) {
+      item.node.scrollTop = item.top;
+    }
+    if (item.node.scrollLeft !== item.left) {
+      item.node.scrollLeft = item.left;
+    }
+  }
+  if (window.scrollX !== snapshot.windowX || window.scrollY !== snapshot.windowY) {
+    window.scrollTo(snapshot.windowX, snapshot.windowY);
+  }
+}
+
+function syncWebTextareaHeightsBatch(
+  rootNode: View | null,
+  items: Array<{ node: TextInput | null; minHeight: number }>,
+  force = false
+) {
+  if (Platform.OS !== 'web' || typeof window === 'undefined') return;
+
+  const dirty: Array<{
+    el: HTMLTextAreaElement;
+    minHeight: number;
+    cached?: { value: string; width: number; minHeight: number; height: number };
+  }> = [];
+
+  for (const item of items) {
+    const el = item.node as unknown as HTMLTextAreaElement | null;
+    if (!el || el.tagName !== 'TEXTAREA' || !el.style || !el.isConnected) {
+      continue;
+    }
+    const width = el.clientWidth;
+    const cached = textareaMeasureCache.get(el);
+    const needsMeasure =
+      force ||
+      !cached ||
+      cached.value !== el.value ||
+      cached.width !== width ||
+      cached.minHeight !== item.minHeight ||
+      el.style.height !== `${cached.height}px`;
+    if (needsMeasure) {
+      dirty.push({ el, minHeight: item.minHeight, cached });
+    }
+  }
+
+  if (dirty.length === 0) return;
+
+  const snapshot = captureScrollSnapshots(rootNode as unknown as HTMLElement | null);
+
+  for (const { el, minHeight, cached } of dirty) {
+    el.style.overflow = 'hidden';
+    let nextHeight: number;
+    const canGrowFastPath =
+      !force &&
+      cached &&
+      cached.width === el.clientWidth &&
+      cached.minHeight === minHeight &&
+      el.value.length >= cached.value.length &&
+      el.scrollHeight > el.clientHeight;
+
+    if (canGrowFastPath) {
+      nextHeight = Math.max(el.scrollHeight, minHeight);
+      el.style.height = `${nextHeight}px`;
+    } else {
+      el.style.height = '0px';
+      nextHeight = Math.max(el.scrollHeight, minHeight);
+      el.style.height = `${nextHeight}px`;
+    }
+
+    if (el.scrollTop !== 0) {
+      el.scrollTop = 0;
+    }
+
+    textareaMeasureCache.set(el, {
+      value: el.value,
+      width: el.clientWidth,
+      minHeight,
+      height: nextHeight,
+    });
+  }
+
+  restoreScrollSnapshots(snapshot);
 }
 
 export const NoteBlockEditor: React.FC<NoteBlockEditorProps> = ({
@@ -129,21 +260,94 @@ export const NoteBlockEditor: React.FC<NoteBlockEditorProps> = ({
 
   useEffect(() => {
     const targetId = pendingFocusIdRef.current;
-    if (targetId && inputRefs.current[targetId]) {
-      inputRefs.current[targetId]?.focus();
+    const targetNode = targetId ? inputRefs.current[targetId] : null;
+    if (targetNode) {
+      if (Platform.OS === 'web') {
+        const domNode = targetNode as unknown as HTMLElement | null;
+        if (domNode && typeof domNode.focus === 'function') {
+          domNode.focus({ preventScroll: true });
+        } else {
+          targetNode.focus();
+        }
+      } else {
+        targetNode.focus();
+      }
       pendingFocusIdRef.current = null;
     }
   }, [blocks]);
 
   useLayoutEffect(() => {
     if (Platform.OS !== 'web') return;
-    for (const block of blocks) {
-      syncWebTextareaHeight(
-        inputRefs.current[block.id] ?? null,
-        block.type === 'code' ? 54 : 0
-      );
-    }
+    syncWebTextareaHeightsBatch(
+      editorContainerRef.current,
+      blocks.map((block) => ({
+        node: inputRefs.current[block.id] ?? null,
+        minHeight: block.type === 'code' ? 54 : 0,
+      }))
+    );
   }, [blocks]);
+
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof window === 'undefined') {
+      return undefined;
+    }
+    const rootEl = editorContainerRef.current as unknown as HTMLElement | null;
+    if (!rootEl) return undefined;
+
+    const anchorDisabledNodes: Array<{ el: HTMLElement; prev: string }> = [];
+    let cur: HTMLElement | null = rootEl;
+    while (cur) {
+      const style = window.getComputedStyle(cur);
+      const isRootOrScroll =
+        cur === rootEl ||
+        /(auto|scroll|overlay)/.test(style.overflowY) ||
+        /(auto|scroll|overlay)/.test(style.overflowX);
+      if (isRootOrScroll && cur.style) {
+        const styleAny = cur.style as CSSStyleDeclaration & {
+          overflowAnchor?: string;
+        };
+        anchorDisabledNodes.push({
+          el: cur,
+          prev: styleAny.overflowAnchor ?? '',
+        });
+        styleAny.overflowAnchor = 'none';
+      }
+      cur = cur.parentElement;
+    }
+
+    let lastObservedWidth = rootEl.clientWidth;
+    const resyncForWidth = () => {
+      const nextWidth = rootEl.clientWidth;
+      if (nextWidth === lastObservedWidth) return;
+      lastObservedWidth = nextWidth;
+      syncWebTextareaHeightsBatch(
+        editorContainerRef.current,
+        latestBlocksRef.current.map((block) => ({
+          node: inputRefs.current[block.id] ?? null,
+          minHeight: block.type === 'code' ? 54 : 0,
+        })),
+        true
+      );
+    };
+
+    let observer: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== 'undefined') {
+      observer = new ResizeObserver(resyncForWidth);
+      observer.observe(rootEl);
+    }
+    window.addEventListener('resize', resyncForWidth);
+
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener('resize', resyncForWidth);
+      for (const entry of anchorDisabledNodes) {
+        const styleAny = entry.el.style as CSSStyleDeclaration & {
+          overflowAnchor?: string;
+        };
+        styleAny.overflowAnchor = entry.prev;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (
@@ -935,21 +1139,16 @@ export const NoteBlockEditor: React.FC<NoteBlockEditorProps> = ({
                   <TextInput
                     ref={(el) => {
                       inputRefs.current[block.id] = el;
-                      syncWebTextareaHeight(el, 54);
                     }}
                     value={block.text}
                     onFocus={() => setFocusedBlockId(block.id)}
                     onChangeText={(txt) => {
                       handleTextChange(index, block, txt);
-                      if (Platform.OS === 'web') {
-                        requestAnimationFrame(() =>
-                          syncWebTextareaHeight(inputRefs.current[block.id] ?? null, 54)
-                        );
-                      }
                     }}
                     placeholder="// Escribe código o comandos aquí..."
                     placeholderTextColor="#6E7480"
                     multiline
+                    scrollEnabled={Platform.OS === 'web' ? undefined : false}
                     blurOnSubmit={false}
                     textAlignVertical="top"
                     style={[styles.codeInput, { fontFamily: CODE_FONT }]}
@@ -1005,21 +1204,16 @@ export const NoteBlockEditor: React.FC<NoteBlockEditorProps> = ({
                     <TextInput
                       ref={(el) => {
                         inputRefs.current[block.id] = el;
-                        syncWebTextareaHeight(el);
                       }}
                       value={block.text}
                       onFocus={() => setFocusedBlockId(block.id)}
                       onChangeText={(txt) => {
                         handleTextChange(index, block, txt);
-                        if (Platform.OS === 'web') {
-                          requestAnimationFrame(() =>
-                            syncWebTextareaHeight(inputRefs.current[block.id] ?? null)
-                          );
-                        }
                       }}
                       placeholder="Idea destacada o recordatorio visual..."
                       placeholderTextColor={theme.textMuted}
                       multiline
+                      scrollEnabled={Platform.OS === 'web' ? undefined : false}
                       numberOfLines={Platform.OS === 'web' ? 1 : undefined}
                       blurOnSubmit={false}
                       style={[styles.calloutInput, { color: bodyTextColor }]}
@@ -1057,21 +1251,16 @@ export const NoteBlockEditor: React.FC<NoteBlockEditorProps> = ({
                     <TextInput
                       ref={(el) => {
                         inputRefs.current[block.id] = el;
-                        syncWebTextareaHeight(el);
                       }}
                       value={block.text}
                       onFocus={() => setFocusedBlockId(block.id)}
                       onChangeText={(txt) => {
                         handleTextChange(index, block, txt);
-                        if (Platform.OS === 'web') {
-                          requestAnimationFrame(() =>
-                            syncWebTextareaHeight(inputRefs.current[block.id] ?? null)
-                          );
-                        }
                       }}
                       placeholder="Tarea dentro de esta nota..."
                       placeholderTextColor={theme.textMuted}
                       multiline
+                      scrollEnabled={Platform.OS === 'web' ? undefined : false}
                       numberOfLines={Platform.OS === 'web' ? 1 : undefined}
                       blurOnSubmit={false}
                       style={[
@@ -1103,7 +1292,7 @@ export const NoteBlockEditor: React.FC<NoteBlockEditorProps> = ({
                   : block.type === 'h3'
                     ? 'Sección H3'
                     : index === 0
-                      ? 'Escribe aquí, o usa # , - [ ] , > , ``` o / ...'
+                      ? 'Escribe ideas, checklists o documentación...'
                       : 'Escribe o presiona / para comandos...';
 
             return (
@@ -1111,21 +1300,16 @@ export const NoteBlockEditor: React.FC<NoteBlockEditorProps> = ({
                 <TextInput
                   ref={(el) => {
                     inputRefs.current[block.id] = el;
-                    syncWebTextareaHeight(el);
                   }}
                   value={block.text}
                   onFocus={() => setFocusedBlockId(block.id)}
                   onChangeText={(txt) => {
                     handleTextChange(index, block, txt);
-                    if (Platform.OS === 'web') {
-                      requestAnimationFrame(() =>
-                        syncWebTextareaHeight(inputRefs.current[block.id] ?? null)
-                      );
-                    }
                   }}
                   placeholder={placeholderText}
                   placeholderTextColor={theme.textMuted}
                   multiline
+                  scrollEnabled={Platform.OS === 'web' ? undefined : false}
                   numberOfLines={Platform.OS === 'web' ? 1 : undefined}
                   blurOnSubmit={false}
                   style={[typographyStyle, { color: bodyTextColor }]}

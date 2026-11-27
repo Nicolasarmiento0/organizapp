@@ -278,9 +278,9 @@ export const ReminderEditorModal: React.FC<ReminderEditorModalProps> = ({
               <View style={styles.chipsRow}>
                 {(
                   [
-                    { value: 3 as TaskPriority, label: 'Alta (P3)' },
-                    { value: 2 as TaskPriority, label: 'Media (P2)' },
-                    { value: 1 as TaskPriority, label: 'Baja (P1)' },
+                    { value: 3 as TaskPriority, label: 'Alta' },
+                    { value: 2 as TaskPriority, label: 'Media' },
+                    { value: 1 as TaskPriority, label: 'Baja' },
                   ] as const
                 ).map((p) => {
                   const active = priority === p.value;

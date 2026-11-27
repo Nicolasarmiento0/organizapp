@@ -17,6 +17,7 @@ export {
   extractDateAndTimeInputs,
   formatReminderClock,
   formatReminderScheduleBadge,
+  getPriorityLabel,
   getSnoozeOptionPreview,
   getTaskEffectiveDateKey,
   groupScheduledTasks,

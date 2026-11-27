@@ -19,7 +19,11 @@ import {
 import { radii, spacing } from '../../theme/tokens';
 import { useTheme } from '../../theme/ThemeContext';
 import { resolveNoteIcon } from './noteIcons';
-import { getBreadcrumbTrail, type NoteTreeNode } from './noteTree';
+import {
+  getBreadcrumbTrail,
+  getNoteDisplayTitle,
+  type NoteTreeNode,
+} from './noteTree';
 
 export interface NoteSidebarTreeProps {
   pages: NotePageRecord[];
@@ -145,7 +149,7 @@ export const NoteSidebarTree: React.FC<NoteSidebarTreeProps> = ({
             ]}
             numberOfLines={1}
           >
-            {page.title}
+            {getNoteDisplayTitle(page)}
           </Text>
 
           {hasChildren && (
@@ -161,7 +165,7 @@ export const NoteSidebarTree: React.FC<NoteSidebarTreeProps> = ({
               onCreateSubpage(page.id);
             }}
             hitSlop={6}
-            accessibilityLabel={`Crear subpágina en ${page.title}`}
+            accessibilityLabel={`Crear subpágina en ${getNoteDisplayTitle(page)}`}
             style={({ pressed }) => [
               styles.addSubBtn,
               {
@@ -270,7 +274,7 @@ export const NoteSidebarTree: React.FC<NoteSidebarTreeProps> = ({
                       ]}
                       numberOfLines={1}
                     >
-                      {page.title}
+                      {getNoteDisplayTitle(page)}
                     </Text>
                   </Pressable>
                 );

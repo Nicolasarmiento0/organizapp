@@ -660,7 +660,7 @@ export default function RemindersScreen() {
 
               {(
                 [
-                  { key: 'all', label: 'P: Todas' },
+                  { key: 'all', label: 'Prioridad: Todas' },
                   { key: 3, label: 'Alta' },
                   { key: 2, label: 'Media' },
                   { key: 1, label: 'Baja' },

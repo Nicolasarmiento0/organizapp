@@ -10,6 +10,7 @@ import {
 import { triggerBackgroundSync } from '../../db/sync';
 import { insertTaskOfflineFirst } from '../today';
 import {
+  createBlock,
   serializeBlocksToMarkdown,
   type NoteBlock,
 } from './noteBlocks';
@@ -22,6 +23,7 @@ import {
   getBreadcrumbTrail,
   getDescendantIds,
   getDirectChildren,
+  getNoteDisplayTitle,
   type NoteTreeNode,
 } from './noteTree';
 
@@ -54,7 +56,7 @@ export function insertNotePageOfflineFirst(input: CreateNotePageInput): NotePage
     id: createLocalId(),
     userId: input.userId || localStore.getActiveUserId(),
     parentId: input.parentId ?? null,
-    title: input.title.trim() || 'Página sin título',
+    title: input.title.trim(),
     icon: input.icon ?? 'FileText',
     contentMarkdown: input.contentMarkdown ?? '',
     blocksJson: input.blocksJson ?? null,
@@ -151,15 +153,17 @@ export function useNotesWorkspace(userId = '') {
   );
 
   const createSubpage = useCallback(
-    (parentId: string, title = 'Nueva Subpágina') => {
+    (parentId: string, title = '') => {
       const siblings = localStore
         .getNotePages()
         .filter((p) => p.parentId === parentId);
+      const initialBlocks = [createBlock('paragraph', { text: '' })];
       const created = insertNotePageOfflineFirst({
-        title,
+        title: title.trim(),
         parentId,
         icon: 'FileText',
-        contentMarkdown: `# ${title}\n\nEscribe ideas, checklists o documentación...`,
+        blocksJson: JSON.stringify(initialBlocks),
+        contentMarkdown: '',
         tags: ['Subpágina'],
         isPinned: false,
         sortOrder: siblings.length,
@@ -197,7 +201,7 @@ export function useNotesWorkspace(userId = '') {
       updatedAt: nextMonotonicTimestamp(existing?.updatedAt),
     };
     if (input.title !== undefined) {
-      patch.title = input.title.trim() || 'Página sin título';
+      patch.title = input.title.trim();
     }
     if (input.contentMarkdown !== undefined) {
       patch.contentMarkdown = input.contentMarkdown;
@@ -257,7 +261,7 @@ export function useNotesWorkspace(userId = '') {
 
       return insertTaskOfflineFirst({
         title: cleanTitle,
-        notes: `Desde nota: ${page.title}`,
+        notes: `Desde nota: ${getNoteDisplayTitle(page)}`,
         category: 'today',
         priority: 2,
         sourcePageId: page.id,
@@ -294,7 +298,7 @@ export function useNotesWorkspace(userId = '') {
         // Mantiene tag por defecto
       }
       const created = insertNotePageOfflineFirst({
-        title: `${source.title} (Copia)`,
+        title: `${getNoteDisplayTitle(source)} (Copia)`,
         contentMarkdown: source.contentMarkdown,
         blocksJson: source.blocksJson,
         icon: source.icon,

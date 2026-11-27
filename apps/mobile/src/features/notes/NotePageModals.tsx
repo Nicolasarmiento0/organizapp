@@ -22,6 +22,7 @@ import {
   buildNoteTree,
   flattenNoteTree,
   getDescendantIds,
+  getNoteDisplayTitle,
 } from './noteTree';
 
 export interface NoteIconPickerModalProps {
@@ -144,7 +145,7 @@ export const NoteMoveModal: React.FC<NoteMoveModalProps> = ({
                   style={[styles.subtitle, { color: theme.textMuted }]}
                   numberOfLines={1}
                 >
-                  Elige la ubicación de "{page.title}"
+                  Elige la ubicación de "{getNoteDisplayTitle(page)}"
                 </Text>
               </View>
               <Pressable onPress={onClose} hitSlop={8}>
@@ -237,7 +238,7 @@ export const NoteMoveModal: React.FC<NoteMoveModalProps> = ({
                       ]}
                       numberOfLines={1}
                     >
-                      {dest.title}
+                      {getNoteDisplayTitle(dest)}
                     </Text>
                   </Pressable>
                 );
@@ -311,7 +312,7 @@ export const NoteTrashModal: React.FC<NoteTrashModalProps> = ({
                         style={[styles.destTitle, { color: theme.textPrimary }]}
                         numberOfLines={1}
                       >
-                        {item.title}
+                        {getNoteDisplayTitle(item)}
                       </Text>
                       <Pressable
                         onPress={() => onRestore(item.id)}
