@@ -25,6 +25,7 @@ import {
 } from '../src/db/sync';
 import { authClient } from '../src/services/authClient';
 import { configureLocalNotifications } from '../src/services/notifications';
+import { registerPwaServiceWorker } from '../src/services/webPush';
 import { radii, spacing } from '../src/theme/tokens';
 
 // Limpieza de claves heredadas y configuración de notificaciones al iniciar
@@ -217,6 +218,12 @@ export default function RootLayout() {
     Inter_600SemiBold,
     Inter_700Bold,
   });
+
+  useEffect(() => {
+    if (Platform.OS === 'web') {
+      void registerPwaServiceWorker();
+    }
+  }, []);
 
   useEffect(() => {
     if (Platform.OS !== 'web' || !fontsLoaded || typeof document === 'undefined') {

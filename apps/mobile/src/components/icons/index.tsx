@@ -66,6 +66,9 @@ import { GalleryIcon } from '@solar-icons/react-native/bold-duotone/gallery';
 import { GalleryAddIcon } from '@solar-icons/react-native/bold-duotone/gallery-add';
 import { CameraIcon } from '@solar-icons/react-native/bold-duotone/camera';
 import { CloudUploadIcon } from '@solar-icons/react-native/bold-duotone/cloud-upload';
+import { FlagIcon } from '@solar-icons/react-native/bold-duotone/flag';
+import { AlarmSleepIcon } from '@solar-icons/react-native/bold-duotone/alarm-sleep';
+import { CalendarMarkIcon } from '@solar-icons/react-native/bold-duotone/calendar-mark';
 
 // Solar Linear — controles direccionales, micro-acciones y utilidades ligeras
 import { MagnifierIcon } from '@solar-icons/react-native/linear/magnifier';
@@ -191,6 +194,9 @@ export const Gallery = createDuotoneIcon(GalleryIcon, 0.42);
 export const GalleryAdd = createDuotoneIcon(GalleryAddIcon, 0.42);
 export const Camera = createDuotoneIcon(CameraIcon, 0.42);
 export const CloudUpload = createDuotoneIcon(CloudUploadIcon, 0.44);
+export const Flag = createDuotoneIcon(FlagIcon, 0.45);
+export const AlarmSleep = createDuotoneIcon(AlarmSleepIcon, 0.44);
+export const CalendarMark = createDuotoneIcon(CalendarMarkIcon, 0.44);
 
 // Controles direccionales y micro-acciones (Linear)
 export const Search = createLinearIcon(MagnifierIcon);

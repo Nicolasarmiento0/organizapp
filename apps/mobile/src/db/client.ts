@@ -99,7 +99,9 @@ function normalizeHabitLogRecord(raw: HabitLogRecord): HabitLogRecord {
 function normalizeTaskRecord(raw: TaskRecord): TaskRecord {
   return {
     ...raw,
+    isFlagged: Boolean(raw.isFlagged),
     isCompleted: Boolean(raw.isCompleted),
+    notified: Boolean(raw.notified),
     sourcePageId: raw.sourcePageId ?? null,
     sourceBlockId: raw.sourceBlockId ?? null,
   };

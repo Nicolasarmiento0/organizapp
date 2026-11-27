@@ -218,6 +218,7 @@ export interface WeekDayLensPillProps {
   dayShort: string;
   dayNum: string;
   isSelected: boolean;
+  hasActivity?: boolean;
   onSelect: (dateKey: string) => void;
   borderRadius: number;
 }
@@ -227,7 +228,15 @@ export interface WeekDayLensPillProps {
  * lenguaje visual Frosted Lens Ring.
  */
 export const WeekDayLensPill: React.FC<WeekDayLensPillProps> = React.memo(
-  ({ dateKey, dayShort, dayNum, isSelected, onSelect, borderRadius }) => {
+  ({
+    dateKey,
+    dayShort,
+    dayNum,
+    isSelected,
+    hasActivity = false,
+    onSelect,
+    borderRadius,
+  }) => {
     const { theme } = useTheme();
     const reducedMotion = useReducedMotion();
     const [hovered, setHovered] = useState(false);
@@ -356,6 +365,15 @@ export const WeekDayLensPill: React.FC<WeekDayLensPillProps> = React.memo(
           >
             {dayNum}
           </Text>
+
+          {hasActivity && !isSelected ? (
+            <View
+              style={[
+                styles.weekActivityDot,
+                { backgroundColor: theme.accentPrimary },
+              ]}
+            />
+          ) : null}
         </Pressable>
       </Animated.View>
     );
@@ -445,6 +463,14 @@ const styles = StyleSheet.create({
     fontSize: 17,
     zIndex: 2,
     ...typography.bodyBold,
+  },
+  weekActivityDot: {
+    position: 'absolute',
+    bottom: 5,
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    zIndex: 2,
   },
 });
 

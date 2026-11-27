@@ -14,6 +14,7 @@ import {
   CalendarClock,
   CheckSquare,
   FileText,
+  Flag,
   Flame,
   Sparkles,
   X,
@@ -71,6 +72,7 @@ export const QuickCaptureSheet: React.FC<QuickCaptureSheetProps> = ({
   const [title, setTitle] = useState('');
   const [notesOrMarkdown, setNotesOrMarkdown] = useState('');
   const [priority, setPriority] = useState<TaskPriority>(2);
+  const [isFlagged, setIsFlagged] = useState(false);
   const [reminderPreset, setReminderPreset] = useState<ReminderPreset>('none');
   const [timeSlot, setTimeSlot] = useState<'09:00-11:00' | '14:00-16:00' | '17:00-18:30'>(
     '09:00-11:00'
@@ -86,6 +88,7 @@ export const QuickCaptureSheet: React.FC<QuickCaptureSheetProps> = ({
     setTitle('');
     setNotesOrMarkdown('');
     setPriority(2);
+    setIsFlagged(false);
     setReminderPreset('none');
   };
 
@@ -102,6 +105,7 @@ export const QuickCaptureSheet: React.FC<QuickCaptureSheetProps> = ({
         notes: notesOrMarkdown,
         category: reminderAt ? 'reminder' : 'today',
         priority,
+        isFlagged,
         reminderAt,
         userId,
       });
@@ -336,6 +340,32 @@ export const QuickCaptureSheet: React.FC<QuickCaptureSheetProps> = ({
                     </Pressable>
                   );
                 })}
+
+                <Pressable
+                  onPress={() => setIsFlagged((prev) => !prev)}
+                  style={[
+                    styles.chip,
+                    {
+                      borderColor: isFlagged ? theme.accentPrimaryBorder : theme.glassBorder,
+                      backgroundColor: isFlagged ? theme.accentPrimarySoft : theme.inputBg,
+                    },
+                  ]}
+                >
+                  <Flag
+                    size={12}
+                    color={isFlagged ? theme.accentPrimaryLink : theme.textSecondary}
+                    strokeWidth={iconMetrics.strokeWidth}
+                  />
+                  <Text
+                    style={[
+                      styles.chipText,
+                      { color: isFlagged ? theme.accentPrimaryLink : theme.textSecondary },
+                      isFlagged && { fontWeight: '600' },
+                    ]}
+                  >
+                    Con bandera
+                  </Text>
+                </Pressable>
               </View>
 
               <View style={styles.chipsRow}>

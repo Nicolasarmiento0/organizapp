@@ -31,6 +31,7 @@ export interface CreateTaskInput {
   notes?: string;
   category?: TaskCategory;
   priority?: TaskPriority;
+  isFlagged?: boolean;
   dueDate?: string | null;
   reminderAt?: number | null;
   sourcePageId?: string | null;
@@ -99,6 +100,12 @@ export function insertTaskOfflineFirst(input: CreateTaskInput): TaskRecord {
   const now = nextMonotonicTimestamp();
   const id = createLocalId();
   const todayKey = getTodayDateKey();
+  const resolvedDueDate =
+    input.dueDate !== undefined
+      ? input.dueDate
+      : input.reminderAt
+        ? getTodayDateKey(new Date(input.reminderAt))
+        : todayKey;
 
   const record: TaskRecord = {
     id,
@@ -107,10 +114,12 @@ export function insertTaskOfflineFirst(input: CreateTaskInput): TaskRecord {
     notes: input.notes?.trim() || null,
     category: input.category ?? 'today',
     priority: input.priority ?? 2,
+    isFlagged: Boolean(input.isFlagged),
     isCompleted: false,
     completedAt: null,
-    dueDate: input.dueDate !== undefined ? input.dueDate : todayKey,
+    dueDate: resolvedDueDate,
     reminderAt: input.reminderAt ?? null,
+    notified: false,
     notificationId: null,
     sourcePageId: input.sourcePageId ?? null,
     sourceBlockId: input.sourceBlockId ?? null,

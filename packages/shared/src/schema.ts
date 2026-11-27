@@ -80,10 +80,12 @@ export const tasks = sqliteTable(
     notes: text('notes'),
     category: text('category').$type<TaskCategory>().notNull().default('today'),
     priority: integer('priority').$type<TaskPriority>().notNull().default(2),
+    isFlagged: integer('is_flagged', { mode: 'boolean' }).notNull().default(false),
     isCompleted: integer('is_completed', { mode: 'boolean' }).notNull().default(false),
     completedAt: integer('completed_at'),
     dueDate: text('due_date'), // Formato YYYY-MM-DD
-    reminderAt: integer('reminder_at'), // Epoch ms para expo-notifications
+    reminderAt: integer('reminder_at'), // Epoch ms para expo-notifications y Web Push
+    notified: integer('notified', { mode: 'boolean' }).notNull().default(false),
     notificationId: text('notification_id'), // Identificador local de expo-notifications
     sourcePageId: text('source_page_id'), // Enlace opcional a la nota de origen (Paso 4)
     sourceBlockId: text('source_block_id'), // Bloque origen en la nota (Paso 4)
@@ -96,6 +98,12 @@ export const tasks = sqliteTable(
     index('idx_tasks_user_updated').on(table.userId, table.updatedAt),
     index('idx_tasks_dirty').on(table.isDirty),
     index('idx_tasks_due_date').on(table.dueDate),
+    index('idx_tasks_reminder_pending').on(
+      table.reminderAt,
+      table.notified,
+      table.isCompleted,
+      table.deletedAt
+    ),
   ]
 );
 
@@ -245,6 +253,28 @@ export const notePages = sqliteTable(
 
 /**
  * ============================================================================
+ * 5b. SUSCRIPCIONES WEB PUSH (VAPID Zero-Cost en Cloudflare D1)
+ * ============================================================================
+ */
+export const pushSubscriptions = sqliteTable(
+  'push_subscriptions',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    endpoint: text('endpoint').notNull().unique(),
+    p256dh: text('p256dh').notNull(),
+    auth: text('auth').notNull(),
+    userAgent: text('user_agent'),
+    createdAt: integer('created_at').notNull(),
+    updatedAt: integer('updated_at').notNull(),
+  },
+  (table) => [index('idx_push_subscriptions_user_id').on(table.userId)]
+);
+
+/**
+ * ============================================================================
  * 6. METADATOS LOCALES DE SINCRONIZACIÓN (Expo SQLite Local Engine)
  * ============================================================================
  */
@@ -261,6 +291,9 @@ export const syncMeta = sqliteTable('sync_meta', {
  */
 export type TaskRecord = typeof tasks.$inferSelect;
 export type NewTaskRecord = typeof tasks.$inferInsert;
+
+export type PushSubscriptionRecord = typeof pushSubscriptions.$inferSelect;
+export type NewPushSubscriptionRecord = typeof pushSubscriptions.$inferInsert;
 
 export type HabitRecord = typeof habits.$inferSelect;
 export type NewHabitRecord = typeof habits.$inferInsert;
@@ -310,10 +343,12 @@ export const LOCAL_SQLITE_BOOTSTRAP_SQL: readonly string[] = [
     notes TEXT,
     category TEXT NOT NULL DEFAULT 'today',
     priority INTEGER NOT NULL DEFAULT 2,
+    is_flagged INTEGER NOT NULL DEFAULT 0,
     is_completed INTEGER NOT NULL DEFAULT 0,
     completed_at INTEGER,
     due_date TEXT,
     reminder_at INTEGER,
+    notified INTEGER NOT NULL DEFAULT 0,
     notification_id TEXT,
     source_page_id TEXT,
     source_block_id TEXT,
@@ -325,6 +360,7 @@ export const LOCAL_SQLITE_BOOTSTRAP_SQL: readonly string[] = [
   `CREATE INDEX IF NOT EXISTS idx_tasks_user_updated ON tasks(user_id, updated_at);`,
   `CREATE INDEX IF NOT EXISTS idx_tasks_dirty ON tasks(is_dirty);`,
   `CREATE INDEX IF NOT EXISTS idx_tasks_due_date ON tasks(due_date);`,
+  `CREATE INDEX IF NOT EXISTS idx_tasks_reminder_pending ON tasks(reminder_at, notified, is_completed, deleted_at);`,
 
   `CREATE TABLE IF NOT EXISTS habits (
     id TEXT PRIMARY KEY NOT NULL,
@@ -477,4 +513,13 @@ export const LOCAL_SQLITE_MIGRATION_V4_SQL: readonly string[] = [
   `ALTER TABLE note_pages ADD COLUMN blocks_json TEXT;`,
   `ALTER TABLE note_pages ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0;`,
   `CREATE INDEX IF NOT EXISTS idx_note_pages_parent ON note_pages(parent_id);`,
+];
+
+/**
+ * Sentencias de migración incremental V5 (Recordatorios: bandera is_flagged y estado notified).
+ */
+export const LOCAL_SQLITE_MIGRATION_V5_SQL: readonly string[] = [
+  `ALTER TABLE tasks ADD COLUMN is_flagged INTEGER NOT NULL DEFAULT 0;`,
+  `ALTER TABLE tasks ADD COLUMN notified INTEGER NOT NULL DEFAULT 0;`,
+  `CREATE INDEX IF NOT EXISTS idx_tasks_reminder_pending ON tasks(reminder_at, notified, is_completed, deleted_at);`,
 ];

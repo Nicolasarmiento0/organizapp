@@ -1,6 +1,14 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-import { and, eq, gt } from 'drizzle-orm';
+import {
+  and,
+  eq,
+  gt,
+  inArray,
+  isNotNull,
+  isNull,
+  lte,
+} from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/d1';
 import {
   tasks,
@@ -9,6 +17,7 @@ import {
   habitRewards,
   workBlocks,
   notePages,
+  pushSubscriptions,
   type SyncPushRequest,
   type SyncBatchResponse,
 } from '@organiza/shared/schema';
@@ -18,6 +27,11 @@ import {
   type AuthenticatedUser,
   type AuthenticatedSession,
 } from './auth';
+import {
+  sendWebPushNotification,
+  signReminderActionToken,
+  verifyReminderActionToken,
+} from './webPush';
 
 interface AppVariables {
   user: AuthenticatedUser;
@@ -124,6 +138,21 @@ app.use('/api/sync', async (c, next) => {
   await next();
 });
 
+app.use('/api/push/*', async (c, next) => {
+  const auth = createAuth(c.env);
+  const sessionResult = await auth.api.getSession({
+    headers: c.req.raw.headers,
+  });
+
+  if (!sessionResult) {
+    return c.json({ ok: false, error: 'UNAUTHORIZED' }, 401);
+  }
+
+  c.set('user', sessionResult.user);
+  c.set('session', sessionResult.session);
+  await next();
+});
+
 /**
  * Motor de Sincronización Edge Batch (Push + Pull con resolución Last-Write-Wins)
  */
@@ -148,7 +177,12 @@ app.post('/api/sync', async (c) => {
     // 1. Upsert Tareas / Recordatorios (Last-Write-Wins por updatedAt)
     for (const item of incoming.tasks ?? []) {
       const existing = await db
-        .select({ userId: tasks.userId, updatedAt: tasks.updatedAt })
+        .select({
+          userId: tasks.userId,
+          updatedAt: tasks.updatedAt,
+          reminderAt: tasks.reminderAt,
+          notified: tasks.notified,
+        })
         .from(tasks)
         .where(eq(tasks.id, item.id))
         .get();
@@ -160,6 +194,15 @@ app.post('/api/sync', async (c) => {
       if (!existing || (item.updatedAt ?? 0) >= existing.updatedAt) {
         const canonicalUpdatedAt = Math.max(serverTimestamp, item.updatedAt || serverTimestamp);
         maxWrittenUpdatedAt = Math.max(maxWrittenUpdatedAt, canonicalUpdatedAt);
+        const nextReminderAt = item.reminderAt ?? null;
+        const reminderChanged = !existing || existing.reminderAt !== nextReminderAt;
+        const nextNotified =
+          nextReminderAt === null
+            ? false
+            : reminderChanged
+              ? Boolean(item.notified)
+              : Boolean(item.notified || existing.notified);
+
         const sanitized = {
           id: item.id,
           userId: user.id,
@@ -167,10 +210,12 @@ app.post('/api/sync', async (c) => {
           notes: item.notes ?? null,
           category: item.category ?? 'today',
           priority: item.priority ?? 2,
+          isFlagged: Boolean(item.isFlagged),
           isCompleted: Boolean(item.isCompleted),
           completedAt: item.completedAt ?? null,
           dueDate: item.dueDate ?? null,
-          reminderAt: item.reminderAt ?? null,
+          reminderAt: nextReminderAt,
+          notified: nextNotified,
           notificationId: item.notificationId ?? null,
           sourcePageId: item.sourcePageId ?? null,
           sourceBlockId: item.sourceBlockId ?? null,
@@ -773,11 +818,483 @@ app.get('/api/media/*', async (c) => {
   });
 });
 
+/**
+ * Endpoints Web Push (VAPID Zero-Cost en Cloudflare D1)
+ */
+app.get('/api/push/vapid-public-key', async (c) => {
+  const user = c.get('user');
+  const db = drizzle(c.env.DB);
+  const rows = await db
+    .select({ id: pushSubscriptions.id })
+    .from(pushSubscriptions)
+    .where(eq(pushSubscriptions.userId, user.id))
+    .all();
+
+  return c.json({
+    ok: true,
+    configured: Boolean(c.env.VAPID_PUBLIC_KEY),
+    publicKey: c.env.VAPID_PUBLIC_KEY ?? null,
+    subscriptionCount: rows.length,
+  });
+});
+
+app.post('/api/push/subscribe', async (c) => {
+  const user = c.get('user');
+  const db = drizzle(c.env.DB);
+
+  let body: {
+    endpoint?: string;
+    keys?: { p256dh?: string; auth?: string };
+    userAgent?: string;
+  };
+
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ ok: false, error: 'INVALID_JSON_PAYLOAD' }, 400);
+  }
+
+  const endpoint = body.endpoint?.trim();
+  const p256dh = body.keys?.p256dh?.trim();
+  const authKey = body.keys?.auth?.trim();
+
+  if (!endpoint || !endpoint.startsWith('https://') || !p256dh || !authKey) {
+    return c.json({ ok: false, error: 'INVALID_PUSH_SUBSCRIPTION' }, 400);
+  }
+
+  const now = Date.now();
+  const existing = await db
+    .select({ id: pushSubscriptions.id, createdAt: pushSubscriptions.createdAt })
+    .from(pushSubscriptions)
+    .where(eq(pushSubscriptions.endpoint, endpoint))
+    .get();
+
+  const recordId = existing?.id ?? crypto.randomUUID();
+  const userAgent =
+    body.userAgent?.trim().slice(0, 300) ||
+    c.req.header('user-agent')?.slice(0, 300) ||
+    null;
+
+  await db
+    .insert(pushSubscriptions)
+    .values({
+      id: recordId,
+      userId: user.id,
+      endpoint,
+      p256dh,
+      auth: authKey,
+      userAgent,
+      createdAt: existing?.createdAt ?? now,
+      updatedAt: now,
+    })
+    .onConflictDoUpdate({
+      target: pushSubscriptions.endpoint,
+      set: {
+        userId: user.id,
+        p256dh,
+        auth: authKey,
+        userAgent,
+        updatedAt: now,
+      },
+    });
+
+  logEvent('info', 'push_subscription_saved', {
+    userId: user.id,
+    subscriptionId: recordId,
+  });
+
+  return c.json({ ok: true, id: recordId, subscribed: true });
+});
+
+app.delete('/api/push/subscribe', async (c) => {
+  const user = c.get('user');
+  const db = drizzle(c.env.DB);
+
+  let endpoint: string | undefined;
+  try {
+    const body = await c.req.json<{ endpoint?: string }>();
+    endpoint = body?.endpoint?.trim();
+  } catch {
+    endpoint = undefined;
+  }
+
+  if (endpoint) {
+    await db
+      .delete(pushSubscriptions)
+      .where(
+        and(
+          eq(pushSubscriptions.userId, user.id),
+          eq(pushSubscriptions.endpoint, endpoint)
+        )
+      );
+  } else {
+    await db
+      .delete(pushSubscriptions)
+      .where(eq(pushSubscriptions.userId, user.id));
+  }
+
+  return c.json({ ok: true });
+});
+
+app.post('/api/push/test', async (c) => {
+  const user = c.get('user');
+  if (!c.env.VAPID_PUBLIC_KEY || !c.env.VAPID_PRIVATE_KEY) {
+    return c.json({ ok: false, error: 'VAPID_NOT_CONFIGURED' }, 503);
+  }
+
+  const db = drizzle(c.env.DB);
+  const subs = await db
+    .select()
+    .from(pushSubscriptions)
+    .where(eq(pushSubscriptions.userId, user.id))
+    .all();
+
+  if (subs.length === 0) {
+    return c.json({ ok: false, error: 'NO_PUSH_SUBSCRIPTIONS' }, 400);
+  }
+
+  const subject = c.env.VAPID_SUBJECT || c.env.BETTER_AUTH_URL;
+  const payload = JSON.stringify({
+    title: 'Organiza • Push activo',
+    body: 'Las alertas en tiempo real están configuradas correctamente.',
+    tag: 'organiza-push-test',
+    url: '/reminders',
+  });
+
+  let sent = 0;
+  let failed = 0;
+  let removed = 0;
+  const errors: string[] = [];
+
+  for (const sub of subs) {
+    const result = await sendWebPushNotification({
+      subscription: {
+        endpoint: sub.endpoint,
+        p256dh: sub.p256dh,
+        auth: sub.auth,
+      },
+      payload,
+      vapidPublicKey: c.env.VAPID_PUBLIC_KEY,
+      vapidPrivateKey: c.env.VAPID_PRIVATE_KEY,
+      vapidSubject: subject,
+    });
+
+    if (result.ok) {
+      sent += 1;
+    } else {
+      failed += 1;
+      const reason = `HTTP ${result.status}${result.error ? `: ${result.error}` : ''}`;
+      errors.push(reason);
+      logEvent('warn', 'push_test_delivery_failed', {
+        userId: user.id,
+        subscriptionId: sub.id,
+        status: result.status,
+        error: result.error,
+      });
+      if (result.expired) {
+        await db
+          .delete(pushSubscriptions)
+          .where(eq(pushSubscriptions.id, sub.id));
+        removed += 1;
+      }
+    }
+  }
+
+  return c.json({
+    ok: sent > 0,
+    sent,
+    failed,
+    removed,
+    errors,
+    error: sent === 0 ? errors[0] : undefined,
+  });
+});
+
+/**
+ * Ejecuta acciones interactivas desde notificaciones del Service Worker
+ * (`✓ Completar` / `⏰ +1 hora`) incluso con la web cerrada.
+ */
+app.post('/api/reminders/push-action', async (c) => {
+  let body: {
+    taskId?: string;
+    action?: string;
+    actionToken?: string;
+  };
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ ok: false, error: 'INVALID_JSON_PAYLOAD' }, 400);
+  }
+
+  const taskId = body.taskId?.trim();
+  const action = body.action?.trim();
+  if (!taskId || (action !== 'complete' && action !== 'snooze')) {
+    return c.json({ ok: false, error: 'INVALID_PUSH_ACTION' }, 400);
+  }
+
+  let authorizedUserId: string | null = null;
+  if (body.actionToken) {
+    const verified = await verifyReminderActionToken(
+      c.env.BETTER_AUTH_SECRET,
+      body.actionToken
+    );
+    if (verified && verified.taskId === taskId) {
+      authorizedUserId = verified.userId;
+    }
+  }
+
+  if (!authorizedUserId) {
+    const auth = createAuth(c.env);
+    const sessionResult = await auth.api.getSession({
+      headers: c.req.raw.headers,
+    });
+    if (sessionResult) {
+      authorizedUserId = sessionResult.user.id;
+    }
+  }
+
+  if (!authorizedUserId) {
+    return c.json({ ok: false, error: 'UNAUTHORIZED' }, 401);
+  }
+
+  const db = drizzle(c.env.DB);
+  const existing = await db
+    .select()
+    .from(tasks)
+    .where(
+      and(
+        eq(tasks.id, taskId),
+        eq(tasks.userId, authorizedUserId),
+        isNull(tasks.deletedAt)
+      )
+    )
+    .get();
+
+  if (!existing) {
+    return c.json({ ok: false, error: 'TASK_NOT_FOUND' }, 404);
+  }
+
+  const now = Date.now();
+  const nextUpdatedAt = Math.max(now, existing.updatedAt + 1);
+
+  if (action === 'complete') {
+    await db
+      .update(tasks)
+      .set({
+        isCompleted: true,
+        completedAt: now,
+        notified: true,
+        isDirty: false,
+        updatedAt: nextUpdatedAt,
+      })
+      .where(eq(tasks.id, taskId));
+  } else {
+    const nextReminderAt = now + 60 * 60_000;
+    const nextDueDate = new Date(nextReminderAt).toISOString().slice(0, 10);
+    await db
+      .update(tasks)
+      .set({
+        reminderAt: nextReminderAt,
+        dueDate: nextDueDate,
+        isCompleted: false,
+        completedAt: null,
+        notified: false,
+        isDirty: false,
+        updatedAt: nextUpdatedAt,
+      })
+      .where(eq(tasks.id, taskId));
+  }
+
+  logEvent('info', 'reminder_push_action_applied', {
+    userId: authorizedUserId,
+    taskId,
+    action,
+    updatedAt: nextUpdatedAt,
+  });
+
+  return c.json({
+    ok: true,
+    taskId,
+    action,
+    updatedAt: nextUpdatedAt,
+  });
+});
+
 app.all('*', async (c) => {
   if (c.env.ASSETS) {
-    return c.env.ASSETS.fetch(c.req.raw);
+    const assetResponse = await c.env.ASSETS.fetch(c.req.raw);
+    if (c.req.path === '/sw.js') {
+      const headers = new Headers(assetResponse.headers);
+      headers.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+      headers.set('Service-Worker-Allowed', '/');
+      return new Response(assetResponse.body, {
+        status: assetResponse.status,
+        statusText: assetResponse.statusText,
+        headers,
+      });
+    }
+    if (c.req.path === '/manifest.json') {
+      const headers = new Headers(assetResponse.headers);
+      headers.set('Content-Type', 'application/manifest+json; charset=utf-8');
+      headers.set('Cache-Control', 'public, max-age=3600');
+      return new Response(assetResponse.body, {
+        status: assetResponse.status,
+        statusText: assetResponse.statusText,
+        headers,
+      });
+    }
+    return assetResponse;
   }
   return c.notFound();
 });
 
-export default app;
+async function processDueRemindersCron(
+  env: CloudflareBindings,
+  scheduledTimeMs: number
+): Promise<void> {
+  if (!env.VAPID_PUBLIC_KEY || !env.VAPID_PRIVATE_KEY) {
+    logEvent('warn', 'push_cron_missing_vapid', {
+      scheduledTimeMs,
+    });
+    return;
+  }
+
+  const db = drizzle(env.DB);
+  const now = Math.max(Date.now(), scheduledTimeMs || 0);
+
+  const dueTasks = await db
+    .select()
+    .from(tasks)
+    .where(
+      and(
+        isNull(tasks.deletedAt),
+        eq(tasks.isCompleted, false),
+        eq(tasks.notified, false),
+        isNotNull(tasks.reminderAt),
+        lte(tasks.reminderAt, now)
+      )
+    )
+    .limit(30)
+    .all();
+
+  if (dueTasks.length === 0) {
+    return;
+  }
+
+  const userIds = Array.from(new Set(dueTasks.map((t) => t.userId)));
+  const allSubs = await db
+    .select()
+    .from(pushSubscriptions)
+    .where(inArray(pushSubscriptions.userId, userIds))
+    .all();
+
+  const subsByUser = new Map<string, typeof allSubs>();
+  for (const sub of allSubs) {
+    const list = subsByUser.get(sub.userId);
+    if (list) {
+      list.push(sub);
+    } else {
+      subsByUser.set(sub.userId, [sub]);
+    }
+  }
+
+  const subject = env.VAPID_SUBJECT || env.BETTER_AUTH_URL;
+  const MAX_SUBREQUESTS = 40;
+  let subrequestsUsed = 0;
+  let sentCount = 0;
+  let notifiedTasks = 0;
+
+  for (const task of dueTasks) {
+    const userSubs = subsByUser.get(task.userId) ?? [];
+
+    if (userSubs.length === 0) {
+      await db
+        .update(tasks)
+        .set({
+          notified: true,
+          updatedAt: Math.max(now, task.updatedAt + 1),
+        })
+        .where(eq(tasks.id, task.id));
+      notifiedTasks += 1;
+      continue;
+    }
+
+    if (subrequestsUsed + userSubs.length > MAX_SUBREQUESTS) {
+      break;
+    }
+
+    const actionToken = await signReminderActionToken(
+      env.BETTER_AUTH_SECRET,
+      task.id,
+      task.userId
+    );
+    const isUrgent = Boolean(task.isFlagged) || task.priority === 3;
+    const payload = JSON.stringify({
+      title: isUrgent
+        ? '⚡ Recordatorio urgente • Organiza'
+        : 'Recordatorio • Organiza',
+      body: task.title,
+      tag: `reminder-${task.id}`,
+      url: '/reminders',
+      taskId: task.id,
+      actionToken,
+    });
+
+    for (const sub of userSubs) {
+      subrequestsUsed += 1;
+      const res = await sendWebPushNotification({
+        subscription: {
+          endpoint: sub.endpoint,
+          p256dh: sub.p256dh,
+          auth: sub.auth,
+        },
+        payload,
+        vapidPublicKey: env.VAPID_PUBLIC_KEY,
+        vapidPrivateKey: env.VAPID_PRIVATE_KEY,
+        vapidSubject: subject,
+      });
+
+      if (res.ok) {
+        sentCount += 1;
+      } else if (res.expired) {
+        await db
+          .delete(pushSubscriptions)
+          .where(eq(pushSubscriptions.id, sub.id));
+      } else {
+        logEvent('warn', 'push_cron_delivery_failed', {
+          taskId: task.id,
+          subscriptionId: sub.id,
+          status: res.status,
+          error: res.error,
+        });
+      }
+    }
+
+    await db
+      .update(tasks)
+      .set({
+        notified: true,
+        updatedAt: Math.max(now, task.updatedAt + 1),
+      })
+      .where(eq(tasks.id, task.id));
+    notifiedTasks += 1;
+  }
+
+  logEvent('info', 'push_cron_completed', {
+    dueCount: dueTasks.length,
+    notifiedTasks,
+    sentCount,
+    subrequestsUsed,
+  });
+}
+
+export default {
+  fetch: app.fetch,
+  async scheduled(
+    controller: ScheduledController,
+    env: CloudflareBindings,
+    ctx: ExecutionContext
+  ) {
+    ctx.waitUntil(processDueRemindersCron(env, controller.scheduledTime));
+  },
+};

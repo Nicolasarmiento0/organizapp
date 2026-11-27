@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Pressable,
   ScrollView,
@@ -8,20 +8,36 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import type { TaskRecord, WorkBlockType } from '@organiza/shared/schema';
 import {
+  AlarmSleep,
+  Bell,
   Briefcase,
   Calendar,
+  Check,
+  Circle,
+  Flag,
   MapPin,
   Plus,
   Trash2,
   Zap,
 } from '../../src/components/icons';
-import type { WorkBlockType } from '@organiza/shared/schema';
-import { iconMetrics, radii, spacing, typography } from '../../src/theme/tokens';
+import {
+  iconMetrics,
+  radii,
+  shadows,
+  spacing,
+  typography,
+} from '../../src/theme/tokens';
 import { useTheme } from '../../src/theme/ThemeContext';
 import { LiquidGlassCard } from '../../src/components/glass/LiquidGlassCard';
 import { MacIconBadge } from '../../src/components/glass/MacIconBadge';
 import { useCalendarSchedule } from '../../src/features/calendar';
+import {
+  SnoozeMenuModal,
+  isTaskOverdue,
+  type SnoozePreset,
+} from '../../src/features/reminders';
 import { WeekDayLensPill } from '../../src/features/dashboard/CalendarDayCell';
 import { getTodayDateKey } from '../../src/db/client';
 import { authClient, resolveActiveUserId } from '../../src/services/authClient';
@@ -48,21 +64,59 @@ export default function CalendarScheduleScreen() {
   const { data: session } = authClient.useSession();
   const activeUserId = resolveActiveUserId(session?.user?.id);
 
+  const todayKey = getTodayDateKey();
   const {
     selectedDateKey,
     setSelectedDateKey,
     blocks,
+    timedReminders,
+    timelineItems,
+    reminderDateKeys,
     addWorkBlock,
     removeWorkBlock,
-  } = useCalendarSchedule(getTodayDateKey(), activeUserId);
+    toggleReminderComplete,
+    snoozeReminder,
+  } = useCalendarSchedule(todayKey, activeUserId);
 
   const weekDays = useMemo(() => buildWeekDays(), []);
   const [newTitle, setNewTitle] = useState('');
   const [newStart, setNewStart] = useState('10:00');
   const [newEnd, setNewEnd] = useState('12:00');
   const [selectedType, setSelectedType] = useState<WorkBlockType>('deep_work');
+  const [snoozeTargetTask, setSnoozeTargetTask] = useState<TaskRecord | null>(
+    null
+  );
+  const [feedbackToast, setFeedbackToast] = useState<string | null>(null);
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (toastTimerRef.current) {
+        clearTimeout(toastTimerRef.current);
+      }
+    };
+  }, []);
+
+  const showToast = (message: string) => {
+    if (toastTimerRef.current) {
+      clearTimeout(toastTimerRef.current);
+    }
+    setFeedbackToast(message);
+    toastTimerRef.current = setTimeout(() => {
+      setFeedbackToast(null);
+      toastTimerRef.current = null;
+    }, 2600);
+  };
+
+  const handleSelectSnooze = (taskId: string, preset: SnoozePreset) => {
+    const result = snoozeReminder(taskId, preset);
+    if (result) {
+      showToast(`Pospuesto para ${result.displayLabel}`);
+    }
+  };
 
   const calendarPalette = theme.modules.calendar;
+  const nowMs = Date.now();
 
   const handleAddBlock = () => {
     const clean = newTitle.trim();
@@ -123,6 +177,7 @@ export default function CalendarScheduleScreen() {
                 dayShort={day.dayShort}
                 dayNum={day.dayNum}
                 isSelected={isSelected}
+                hasActivity={reminderDateKeys.has(day.dateKey)}
                 onSelect={setSelectedDateKey}
                 borderRadius={radii.md}
               />
@@ -241,93 +296,336 @@ export default function CalendarScheduleScreen() {
         {/* Línea de Tiempo del Día */}
         <View style={styles.timelineSection}>
           <Text style={[styles.timelineHeader, { color: theme.textPrimary }]}>
-            Cronograma · {blocks.length} bloques activos
+            Cronograma · {blocks.length}{' '}
+            {blocks.length === 1 ? 'bloque' : 'bloques'} ·{' '}
+            {timedReminders.length}{' '}
+            {timedReminders.length === 1 ? 'recordatorio' : 'recordatorios'}
           </Text>
 
-          {blocks.map((block) => {
-            const isDeepWork = block.blockType === 'deep_work';
-            const badgePalette = isDeepWork
-              ? theme.modules.calendar
-              : theme.modules.dashboard;
+          {timelineItems.length === 0 ? (
+            <LiquidGlassCard style={styles.emptyTimelineCard}>
+              <Text style={[styles.emptyTimelineText, { color: theme.textSecondary }]}>
+                Sin bloques ni recordatorios programados con hora para este día.
+              </Text>
+            </LiquidGlassCard>
+          ) : (
+            timelineItems.map((item) => {
+              if (item.kind === 'reminder') {
+                const { task } = item;
+                const overdue = isTaskOverdue(task, nowMs, todayKey);
+                const isUrgent = Boolean(task.isFlagged) || task.priority === 3;
+                const ringColor =
+                  isUrgent || overdue
+                    ? theme.accentPrimaryLink
+                    : theme.accentPrimary;
 
-            return (
-              <LiquidGlassCard
-                key={block.id}
-                noPadding
-                style={styles.blockCard}
-                contentStyle={styles.blockRow}
-              >
-                <View style={styles.timeColumn}>
-                  <Text style={[styles.startTimeText, { color: theme.textPrimary }]}>
-                    {block.startTime}
-                  </Text>
-                  <Text style={[styles.endTimeText, { color: theme.textSecondary }]}>
-                    {block.endTime}
-                  </Text>
-                </View>
+                return (
+                  <LiquidGlassCard
+                    key={`reminder-${task.id}`}
+                    noPadding
+                    style={[
+                      styles.blockCard,
+                      !task.isCompleted && {
+                        borderColor: theme.accentPrimaryBorder,
+                      },
+                    ]}
+                    contentStyle={[
+                      styles.blockRow,
+                      !task.isCompleted && {
+                        backgroundColor: theme.accentPrimarySoft,
+                      },
+                    ]}
+                  >
+                    <View style={styles.timeColumn}>
+                      <Text
+                        style={[
+                          styles.startTimeText,
+                          {
+                            color: task.isCompleted
+                              ? theme.textMuted
+                              : theme.accentPrimaryLink,
+                          },
+                        ]}
+                      >
+                        {item.sortTime}
+                      </Text>
+                      <Text
+                        style={[
+                          styles.endTimeText,
+                          { color: theme.textSecondary },
+                        ]}
+                      >
+                        Aviso
+                      </Text>
+                    </View>
 
-                <View
-                  style={[
-                    styles.verticalAccentBar,
-                    { backgroundColor: badgePalette.icon },
-                  ]}
-                />
+                    <Pressable
+                      onPress={() => toggleReminderComplete(task.id)}
+                      hitSlop={10}
+                      style={styles.reminderRingHit}
+                    >
+                      {task.isCompleted ? (
+                        <View
+                          style={[
+                            styles.reminderCheckedCircle,
+                            { backgroundColor: theme.accentPrimary },
+                          ]}
+                        >
+                          <Check
+                            size={14}
+                            color={theme.accentPrimaryText}
+                            strokeWidth={2.5}
+                          />
+                        </View>
+                      ) : (
+                        <Circle
+                          size={22}
+                          color={ringColor}
+                          strokeWidth={2.1}
+                        />
+                      )}
+                    </Pressable>
 
-                <View style={styles.blockMainInfo}>
-                  <View style={styles.blockTypeBadgeRow}>
-                    {isDeepWork ? (
-                      <Zap size={12} color={badgePalette.icon} strokeWidth={2} />
-                    ) : (
-                      <Briefcase size={12} color={badgePalette.icon} strokeWidth={2} />
-                    )}
+                    <View style={styles.blockMainInfo}>
+                      <View style={styles.blockTypeBadgeRow}>
+                        <Bell
+                          size={12}
+                          color={
+                            task.isCompleted
+                              ? theme.textMuted
+                              : theme.accentPrimaryLink
+                          }
+                          strokeWidth={2}
+                        />
+                        <Text
+                          style={[
+                            styles.blockTypeLabel,
+                            {
+                              color: task.isCompleted
+                                ? theme.textMuted
+                                : theme.accentPrimaryLink,
+                            },
+                          ]}
+                        >
+                          RECORDATORIO
+                        </Text>
+
+                        {task.isFlagged ? (
+                          <Flag
+                            size={11}
+                            color={theme.accentPrimaryLink}
+                            strokeWidth={2}
+                          />
+                        ) : null}
+
+                        {overdue && !task.isCompleted ? (
+                          <View
+                            style={[
+                              styles.overdueTag,
+                              {
+                                backgroundColor: theme.accentPrimary,
+                              },
+                            ]}
+                          >
+                            <Text
+                              style={[
+                                styles.overdueTagText,
+                                { color: theme.accentPrimaryText },
+                              ]}
+                            >
+                              Vencido
+                            </Text>
+                          </View>
+                        ) : null}
+                      </View>
+
+                      <Text
+                        style={[
+                          styles.blockTitle,
+                          { color: theme.textPrimary },
+                          task.isCompleted && {
+                            textDecorationLine: 'line-through',
+                            color: theme.textMuted,
+                          },
+                        ]}
+                      >
+                        {task.title}
+                      </Text>
+
+                      {task.notes ? (
+                        <Text
+                          style={[
+                            styles.locationText,
+                            { color: theme.textSecondary },
+                          ]}
+                          numberOfLines={1}
+                        >
+                          {task.notes}
+                        </Text>
+                      ) : null}
+                    </View>
+
+                    {!task.isCompleted ? (
+                      <Pressable
+                        onPress={() => setSnoozeTargetTask(task)}
+                        hitSlop={8}
+                        style={[
+                          styles.snoozePillBtn,
+                          {
+                            backgroundColor: theme.card,
+                            borderColor: theme.accentPrimaryBorder,
+                          },
+                        ]}
+                      >
+                        <AlarmSleep
+                          size={15}
+                          color={theme.accentPrimaryLink}
+                          strokeWidth={iconMetrics.strokeWidth}
+                        />
+                      </Pressable>
+                    ) : null}
+                  </LiquidGlassCard>
+                );
+              }
+
+              const { block } = item;
+              const isDeepWork = block.blockType === 'deep_work';
+              const badgePalette = isDeepWork
+                ? theme.modules.calendar
+                : theme.modules.dashboard;
+
+              return (
+                <LiquidGlassCard
+                  key={`block-${block.id}`}
+                  noPadding
+                  style={styles.blockCard}
+                  contentStyle={styles.blockRow}
+                >
+                  <View style={styles.timeColumn}>
+                    <Text
+                      style={[styles.startTimeText, { color: theme.textPrimary }]}
+                    >
+                      {block.startTime}
+                    </Text>
                     <Text
                       style={[
-                        styles.blockTypeLabel,
-                        { color: badgePalette.icon },
+                        styles.endTimeText,
+                        { color: theme.textSecondary },
                       ]}
                     >
-                      {block.blockType === 'deep_work'
-                        ? 'DEEP WORK'
-                        : block.blockType === 'work_shift'
-                          ? 'TURNO LABORAL'
-                          : 'PERSONAL'}
+                      {block.endTime}
                     </Text>
                   </View>
 
-                  <Text style={[styles.blockTitle, { color: theme.textPrimary }]}>
-                    {block.title}
-                  </Text>
+                  <View
+                    style={[
+                      styles.verticalAccentBar,
+                      { backgroundColor: badgePalette.icon },
+                    ]}
+                  />
 
-                  {block.locationOrLink ? (
-                    <View style={styles.locationRow}>
-                      <MapPin
-                        size={12}
-                        color={theme.textSecondary}
-                        strokeWidth={iconMetrics.strokeWidth}
-                      />
-                      <Text style={[styles.locationText, { color: theme.textSecondary }]}>
-                        {block.locationOrLink}
+                  <View style={styles.blockMainInfo}>
+                    <View style={styles.blockTypeBadgeRow}>
+                      {isDeepWork ? (
+                        <Zap
+                          size={12}
+                          color={badgePalette.icon}
+                          strokeWidth={2}
+                        />
+                      ) : (
+                        <Briefcase
+                          size={12}
+                          color={badgePalette.icon}
+                          strokeWidth={2}
+                        />
+                      )}
+                      <Text
+                        style={[
+                          styles.blockTypeLabel,
+                          { color: badgePalette.icon },
+                        ]}
+                      >
+                        {block.blockType === 'deep_work'
+                          ? 'DEEP WORK'
+                          : block.blockType === 'work_shift'
+                            ? 'TURNO LABORAL'
+                            : 'PERSONAL'}
                       </Text>
                     </View>
-                  ) : null}
-                </View>
 
-                <Pressable
-                  onPress={() => removeWorkBlock(block.id)}
-                  hitSlop={10}
-                  style={styles.deleteBtn}
-                >
-                  <Trash2
-                    size={16}
-                    color={theme.textMuted}
-                    strokeWidth={iconMetrics.strokeWidth}
-                  />
-                </Pressable>
-              </LiquidGlassCard>
-            );
-          })}
+                    <Text
+                      style={[styles.blockTitle, { color: theme.textPrimary }]}
+                    >
+                      {block.title}
+                    </Text>
+
+                    {block.locationOrLink ? (
+                      <View style={styles.locationRow}>
+                        <MapPin
+                          size={12}
+                          color={theme.textSecondary}
+                          strokeWidth={iconMetrics.strokeWidth}
+                        />
+                        <Text
+                          style={[
+                            styles.locationText,
+                            { color: theme.textSecondary },
+                          ]}
+                        >
+                          {block.locationOrLink}
+                        </Text>
+                      </View>
+                    ) : null}
+                  </View>
+
+                  <Pressable
+                    onPress={() => removeWorkBlock(block.id)}
+                    hitSlop={10}
+                    style={styles.deleteBtn}
+                  >
+                    <Trash2
+                      size={16}
+                      color={theme.textMuted}
+                      strokeWidth={iconMetrics.strokeWidth}
+                    />
+                  </Pressable>
+                </LiquidGlassCard>
+              );
+            })
+          )}
         </View>
       </ScrollView>
+
+      <SnoozeMenuModal
+        visible={Boolean(snoozeTargetTask)}
+        task={snoozeTargetTask}
+        onClose={() => setSnoozeTargetTask(null)}
+        onSelectPreset={handleSelectSnooze}
+      />
+
+      {feedbackToast ? (
+        <View pointerEvents="none" style={styles.toastWrapper}>
+          <LiquidGlassCard
+            variant="floating"
+            intensity={85}
+            noPadding
+            style={[
+              styles.toastPill,
+              { borderColor: theme.accentPrimaryBorder },
+            ]}
+            contentStyle={styles.toastContent}
+          >
+            <AlarmSleep
+              size={15}
+              color={theme.accentPrimaryLink}
+              strokeWidth={iconMetrics.strokeWidth}
+            />
+            <Text style={[styles.toastText, { color: theme.textPrimary }]}>
+              {feedbackToast}
+            </Text>
+          </LiquidGlassCard>
+        </View>
+      ) : null}
     </SafeAreaView>
   );
 }
@@ -500,5 +798,68 @@ const styles = StyleSheet.create({
   },
   deleteBtn: {
     padding: 4,
+  },
+  emptyTimelineCard: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: spacing.xl,
+  },
+  emptyTimelineText: {
+    fontSize: 13,
+    textAlign: 'center',
+    ...typography.body,
+  },
+  reminderRingHit: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 26,
+  },
+  reminderCheckedCircle: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  overdueTag: {
+    borderRadius: radii.pill,
+    paddingHorizontal: 7,
+    paddingVertical: 1,
+    marginLeft: 2,
+  },
+  overdueTagText: {
+    fontSize: 9,
+    ...typography.bodySemiBold,
+  },
+  snoozePillBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  toastWrapper: {
+    position: 'absolute',
+    bottom: 92,
+    left: spacing.lg,
+    right: spacing.lg,
+    alignItems: 'center',
+  },
+  toastPill: {
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    ...shadows.floatingDock,
+  },
+  toastContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+  toastText: {
+    fontSize: 13,
+    ...typography.bodySemiBold,
   },
 });

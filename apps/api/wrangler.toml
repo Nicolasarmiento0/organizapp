@@ -29,6 +29,11 @@ migrations_dir = "drizzle"
 [vars]
 BETTER_AUTH_URL = "https://organizapp.nsarmiento.workers.dev"
 TRUSTED_ORIGINS = "https://organizapp.nsarmiento.workers.dev,organizaapp://,exp://,http://localhost:8081,http://localhost:8082"
+VAPID_PUBLIC_KEY = "BFeX7Rq98tUMA6KRYm2yCLdW7HW7PXLe0Lvt0UFg0AhY5FqnD75Xb11axYVh8AzgjHhHvTfOs6OShAK_GKae1tA"
+VAPID_SUBJECT = "https://organizapp.nsarmiento.workers.dev"
 # IMPORTANTE: No guardes secretos en wrangler.toml.
 # En local usa `.dev.vars` con BETTER_AUTH_SECRET="..."
 # En producción ejecuta: `npx wrangler secret put BETTER_AUTH_SECRET`
+
+[triggers]
+crons = ["* * * * *"]
