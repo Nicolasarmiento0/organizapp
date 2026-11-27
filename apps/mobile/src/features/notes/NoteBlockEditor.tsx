@@ -457,6 +457,9 @@ export const NoteBlockEditor: React.FC<NoteBlockEditorProps> = ({
   }, []);
 
   const bodyTextColor = headingColor;
+  const notePlaceholderColor = isDark
+    ? 'rgba(245, 247, 250, 0.30)'
+    : 'rgba(15, 17, 21, 0.32)';
 
   const updateBlockAt = (index: number, patch: Partial<NoteBlock>) => {
     const next = blocks.map((b, i) => (i === index ? { ...b, ...patch } : b));
@@ -978,7 +981,7 @@ export const NoteBlockEditor: React.FC<NoteBlockEditorProps> = ({
                           updateBlockAt(index, { caption: cap, text: cap })
                         }
                         placeholder="Pie de foto o nota sobre la imagen..."
-                        placeholderTextColor={theme.textMuted}
+                        placeholderTextColor={notePlaceholderColor}
                         style={[styles.captionInput, { color: theme.textSecondary }]}
                       />
                     </>
@@ -1211,7 +1214,7 @@ export const NoteBlockEditor: React.FC<NoteBlockEditorProps> = ({
                         handleTextChange(index, block, txt);
                       }}
                       placeholder="Idea destacada o recordatorio visual..."
-                      placeholderTextColor={theme.textMuted}
+                      placeholderTextColor={notePlaceholderColor}
                       multiline
                       scrollEnabled={Platform.OS === 'web' ? undefined : false}
                       numberOfLines={Platform.OS === 'web' ? 1 : undefined}
@@ -1258,7 +1261,7 @@ export const NoteBlockEditor: React.FC<NoteBlockEditorProps> = ({
                         handleTextChange(index, block, txt);
                       }}
                       placeholder="Tarea dentro de esta nota..."
-                      placeholderTextColor={theme.textMuted}
+                      placeholderTextColor={notePlaceholderColor}
                       multiline
                       scrollEnabled={Platform.OS === 'web' ? undefined : false}
                       numberOfLines={Platform.OS === 'web' ? 1 : undefined}
@@ -1307,7 +1310,7 @@ export const NoteBlockEditor: React.FC<NoteBlockEditorProps> = ({
                     handleTextChange(index, block, txt);
                   }}
                   placeholder={placeholderText}
-                  placeholderTextColor={theme.textMuted}
+                  placeholderTextColor={notePlaceholderColor}
                   multiline
                   scrollEnabled={Platform.OS === 'web' ? undefined : false}
                   numberOfLines={Platform.OS === 'web' ? 1 : undefined}

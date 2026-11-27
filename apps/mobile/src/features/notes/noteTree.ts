@@ -4,6 +4,11 @@ import {
   normalizeSearchText,
   parseTagsText,
 } from '../../db/seedData';
+import {
+  isLegacyPlaceholderTitle,
+  loadBlocksForPage,
+  serializeBlocksToMarkdown,
+} from './noteBlocks';
 
 export interface NoteTreeNode {
   page: NotePageRecord;
@@ -31,26 +36,40 @@ export interface NoteMetrics {
   charCount: number;
 }
 
-const EDITABLE_PLACEHOLDER_TITLES = new Set([
-  'Nueva Subpágina',
-  'Nueva Página',
-  'Página sin título',
-]);
+export function normalizeEditableNoteTitle(title: string): string {
+  const clean = title.trim();
+  if (!clean || isLegacyPlaceholderTitle(clean)) {
+    return '';
+  }
+  return title;
+}
+
+export function hasCustomNoteTitle(
+  page: Pick<NotePageRecord, 'title'>
+): boolean {
+  return normalizeEditableNoteTitle(page.title).trim().length > 0;
+}
 
 export function getNoteDisplayTitle(
   page: Pick<NotePageRecord, 'title' | 'parentId'>
 ): string {
-  const clean = page.title.trim();
+  const clean = normalizeEditableNoteTitle(page.title).trim();
   if (clean) return clean;
   return page.parentId ? 'Nueva Subpágina' : 'Página sin título';
 }
 
-export function normalizeEditableNoteTitle(title: string): string {
-  const clean = title.trim();
-  if (!clean || EDITABLE_PLACEHOLDER_TITLES.has(clean)) {
-    return '';
-  }
-  return title;
+export function getNotePreviewText(
+  page: Pick<NotePageRecord, 'blocksJson' | 'contentMarkdown'>
+): string {
+  const blocks = loadBlocksForPage(page);
+  const md = serializeBlocksToMarkdown(blocks);
+  return md
+    .replace(/^#{1,6}\s+/gm, '')
+    .replace(/^\s*[-*]\s+\[[xX ]\]\s*/gm, '')
+    .replace(/!\[([^\]]*)\]\([^)]+\)/g, '$1')
+    .replace(/[*_`>#]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 function compareNoteSiblings(a: NotePageRecord, b: NotePageRecord): number {
@@ -273,13 +292,12 @@ export function buildSearchHits(
   return matchedPages.map((page) => {
     const trail = getBreadcrumbTrail(allPages, page.id);
     const breadcrumb = trail.slice(0, -1).map((p) => getNoteDisplayTitle(p));
-    const titleNorm = normalizeSearchText(page.title);
+    const titleNorm = normalizeSearchText(normalizeEditableNoteTitle(page.title));
     const matchedInTitle =
       tokens.length > 0 && tokens.some((tok) => titleNorm.includes(tok));
 
     const bodyText = [
-      page.contentMarkdown,
-      extractPlainTextFromBlocksJson(page.blocksJson),
+      getNotePreviewText(page),
       parseTagsText(page.tags),
     ]
       .filter(Boolean)

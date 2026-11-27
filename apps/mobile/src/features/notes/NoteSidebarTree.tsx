@@ -22,6 +22,7 @@ import { resolveNoteIcon } from './noteIcons';
 import {
   getBreadcrumbTrail,
   getNoteDisplayTitle,
+  hasCustomNoteTitle,
   type NoteTreeNode,
 } from './noteTree';
 
@@ -83,6 +84,7 @@ export const NoteSidebarTree: React.FC<NoteSidebarTreeProps> = ({
   const renderTreeNode = (node: NoteTreeNode): React.ReactNode => {
     const { page, depth, children } = node;
     const isActive = page.id === activePageId;
+    const hasTitle = hasCustomNoteTitle(page);
     const hasChildren = children.length > 0;
     const isExpanded = expandedIds[page.id] ?? depth === 0;
     const IconComp = resolveNoteIcon(page.icon);
@@ -143,8 +145,12 @@ export const NoteSidebarTree: React.FC<NoteSidebarTreeProps> = ({
             style={[
               styles.nodeTitle,
               {
-                color: isActive ? theme.textPrimary : theme.textSecondary,
-                fontWeight: isActive ? '700' : '500',
+                color: !hasTitle
+                  ? theme.textMuted
+                  : isActive
+                    ? theme.textPrimary
+                    : theme.textSecondary,
+                fontWeight: !hasTitle ? '400' : isActive ? '700' : '500',
               },
             ]}
             numberOfLines={1}
@@ -243,6 +249,7 @@ export const NoteSidebarTree: React.FC<NoteSidebarTreeProps> = ({
             <View style={styles.pinnedList}>
               {pinnedPages.map((page) => {
                 const isActive = page.id === activePageId;
+                const hasTitle = hasCustomNoteTitle(page);
                 const IconComp = resolveNoteIcon(page.icon);
                 return (
                   <Pressable
@@ -269,8 +276,14 @@ export const NoteSidebarTree: React.FC<NoteSidebarTreeProps> = ({
                     <Text
                       style={[
                         styles.pinnedTitle,
-                        { color: isActive ? theme.textPrimary : theme.textSecondary },
-                        isActive && { fontWeight: '700' },
+                        {
+                          color: !hasTitle
+                            ? theme.textMuted
+                            : isActive
+                              ? theme.textPrimary
+                              : theme.textSecondary,
+                          fontWeight: !hasTitle ? '400' : isActive ? '700' : '500',
+                        },
                       ]}
                       numberOfLines={1}
                     >

@@ -11,6 +11,7 @@ import { triggerBackgroundSync } from '../../db/sync';
 import { insertTaskOfflineFirst } from '../today';
 import {
   createBlock,
+  sanitizeLegacyNotePageRecord,
   serializeBlocksToMarkdown,
   type NoteBlock,
 } from './noteBlocks';
@@ -75,6 +76,29 @@ export function insertNotePageOfflineFirst(input: CreateNotePageInput): NotePage
   return record;
 }
 
+export function sanitizeLegacyNotePagesInStore(): number {
+  const allPages = localStore.getNotePages();
+  let cleanedCount = 0;
+
+  for (const page of allPages) {
+    const patch = sanitizeLegacyNotePageRecord(page);
+    if (!patch) continue;
+    localStore.updateNotePage(page.id, {
+      ...patch,
+      isDirty: true,
+      updatedAt: nextMonotonicTimestamp(page.updatedAt),
+    });
+    cleanedCount += 1;
+  }
+
+  if (cleanedCount > 0) {
+    notifyDatabaseChanged();
+    triggerBackgroundSync();
+  }
+
+  return cleanedCount;
+}
+
 /**
  * FASE 2 — PASOS 1–4:
  * Hook Offline-First para Workspace estilo Notion + Obsidian
@@ -109,6 +133,10 @@ export function useNotesWorkspace(userId = '') {
   useEffect(() => {
     return subscribeDatabaseChanges(refreshAll);
   }, [refreshAll]);
+
+  useEffect(() => {
+    sanitizeLegacyNotePagesInStore();
+  }, [pages]);
 
   const activePage = useMemo(
     () => pages.find((p) => p.id === activePageId) ?? pages[0] ?? null,
@@ -297,10 +325,11 @@ export function useNotesWorkspace(userId = '') {
       } catch {
         // Mantiene tag por defecto
       }
+      const sanitizedSource = sanitizeLegacyNotePageRecord(source);
       const created = insertNotePageOfflineFirst({
         title: `${getNoteDisplayTitle(source)} (Copia)`,
-        contentMarkdown: source.contentMarkdown,
-        blocksJson: source.blocksJson,
+        contentMarkdown: sanitizedSource?.contentMarkdown ?? source.contentMarkdown,
+        blocksJson: sanitizedSource?.blocksJson ?? source.blocksJson,
         icon: source.icon,
         tags: parsedTags,
         isPinned: false,

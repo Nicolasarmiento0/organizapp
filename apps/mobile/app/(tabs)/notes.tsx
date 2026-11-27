@@ -47,6 +47,8 @@ import {
   createBlock,
   getDirectChildren,
   getNoteDisplayTitle,
+  getNotePreviewText,
+  hasCustomNoteTitle,
   loadBlocksForPage,
   normalizeEditableNoteTitle,
   NoteBlockEditor,
@@ -126,6 +128,9 @@ export default function NotesWorkspaceScreen() {
 
   const notesPalette = theme.modules.notes;
   const headingContrastColor = isDark ? theme.textPrimary : '#0F1115';
+  const notePlaceholderColor = isDark
+    ? 'rgba(245, 247, 250, 0.28)'
+    : 'rgba(15, 17, 21, 0.30)';
 
   // Navegación profunda por ?pageId=... desde Recordatorios o Dashboard
   useEffect(() => {
@@ -605,6 +610,7 @@ export default function NotesWorkspaceScreen() {
                     {breadcrumbs.map((crumb, idx) => {
                       const isLast = idx === breadcrumbs.length - 1;
                       const CrumbIcon = resolveNoteIcon(crumb.icon);
+                      const isUntitled = !hasCustomNoteTitle(crumb);
                       return (
                         <React.Fragment key={crumb.id}>
                           <ChevronRight
@@ -635,7 +641,9 @@ export default function NotesWorkspaceScreen() {
                                 {
                                   color: isLast
                                     ? theme.accentPrimaryLink
-                                    : theme.textSecondary,
+                                    : isUntitled
+                                      ? theme.textMuted
+                                      : theme.textSecondary,
                                   fontFamily: isLast
                                     ? fontFamilies.bodyBold
                                     : fontFamilies.bodyMedium,
@@ -832,7 +840,7 @@ export default function NotesWorkspaceScreen() {
                     placeholder={
                       activePage.parentId ? 'Nueva Subpágina' : 'Título de la página...'
                     }
-                    placeholderTextColor={theme.textMuted}
+                    placeholderTextColor={notePlaceholderColor}
                     style={[
                       styles.pageTitleInput,
                       { color: headingContrastColor },
@@ -936,10 +944,8 @@ export default function NotesWorkspaceScreen() {
                       {activeSubpages.map((child) => {
                         const ChildIcon = resolveNoteIcon(child.icon);
                         const nestedCount = getDirectChildren(pages, child.id).length;
-                        const snippet = child.contentMarkdown
-                          .replace(/[#>*`\[\]-]/g, ' ')
-                          .replace(/\s+/g, ' ')
-                          .trim();
+                        const snippet = getNotePreviewText(child);
+                        const childHasTitle = hasCustomNoteTitle(child);
 
                         return (
                           <Pressable
@@ -967,7 +973,12 @@ export default function NotesWorkspaceScreen() {
                               <Text
                                 style={[
                                   styles.subpageCardTitle,
-                                  { color: theme.textPrimary },
+                                  {
+                                    color: childHasTitle
+                                      ? theme.textPrimary
+                                      : theme.textMuted,
+                                    fontWeight: childHasTitle ? '700' : '500',
+                                  },
                                 ]}
                                 numberOfLines={1}
                               >

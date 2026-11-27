@@ -62,8 +62,11 @@ import {
 } from '../../src/features/habits';
 import {
   getNoteDisplayTitle,
+  getNotePreviewText,
+  hasCustomNoteTitle,
   insertNotePageOfflineFirst,
   instantiateNoteTemplate,
+  normalizeEditableNoteTitle,
   resolveNoteIcon,
   type NoteTemplateId,
 } from '../../src/features/notes';
@@ -104,15 +107,6 @@ function formatAlertClock(epochMs?: number | null): string | null {
   } catch {
     return null;
   }
-}
-
-function stripMarkdownPreview(md: string): string {
-  return md
-    .replace(/^#{1,6}\s+/gm, '')
-    .replace(/-\s+\[[xX ]\]\s+/g, '')
-    .replace(/[*_`>#-]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim();
 }
 
 function parseFirstTag(tagsJson: string): string {
@@ -295,8 +289,8 @@ export default function DashboardBentoScreen() {
       notes: notes
         .filter(
           (n) =>
-            n.title.toLowerCase().includes(q) ||
-            n.contentMarkdown.toLowerCase().includes(q)
+            normalizeEditableNoteTitle(n.title).toLowerCase().includes(q) ||
+            getNotePreviewText(n).toLowerCase().includes(q)
         )
         .slice(0, 3),
     };
@@ -1373,7 +1367,8 @@ export default function DashboardBentoScreen() {
 
               <View style={styles.notesList}>
                 {notes.slice(0, 3).map((page) => {
-                  const preview = stripMarkdownPreview(page.contentMarkdown);
+                  const preview = getNotePreviewText(page);
+                  const hasTitle = hasCustomNoteTitle(page);
                   const tagLabel = parseFirstTag(page.tags);
                   const NoteIcon = resolveNoteIcon(page.icon);
                   return (
@@ -1412,7 +1407,14 @@ export default function DashboardBentoScreen() {
                             />
                           ) : null}
                           <Text
-                            style={[styles.noteTitle, { color: theme.textPrimary }]}
+                            style={[
+                              styles.noteTitle,
+                              {
+                                color: hasTitle
+                                  ? theme.textPrimary
+                                  : theme.textMuted,
+                              },
+                            ]}
                             numberOfLines={1}
                           >
                             {getNoteDisplayTitle(page)}

@@ -17,6 +17,7 @@ import {
   type EnrichedHabitItem,
   type HabitBadgeProgress,
 } from '../habits';
+import { sanitizeLegacyNotePagesInStore } from '../notes';
 
 export interface CalendarMonthRef {
   year: number;
@@ -119,6 +120,10 @@ export function useDashboardData(userId = '') {
     refreshDashboardCollections();
     return subscribeDatabaseChanges(refreshDashboardCollections);
   }, [refreshDashboardCollections]);
+
+  useEffect(() => {
+    sanitizeLegacyNotePagesInStore();
+  }, [notes]);
 
   const handleSelectDateKey = useCallback((nextKey: string) => {
     setSelectedDateKey(nextKey);

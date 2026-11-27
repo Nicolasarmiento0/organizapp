@@ -260,20 +260,115 @@ export const LEGACY_PLACEHOLDER_TITLES = new Set([
   'Nueva Página',
 ]);
 
+const TEXT_BEARING_BLOCK_TYPES = new Set<NoteBlockType>([
+  'paragraph',
+  'h1',
+  'h2',
+  'h3',
+  'checklist',
+  'callout',
+]);
+
+function normalizeLegacyComparisonText(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/…/g, '...')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+const LEGACY_PLACEHOLDER_BODIES = new Set([
+  'escribe ideas, checklists o documentacion...',
+  'escribe tus ideas o documentacion en 0 ms...',
+  'escribe tus ideas o documentacion...',
+]);
+
+const LEGACY_PLACEHOLDER_TITLES_NORMALIZED = new Set([
+  'nueva subpagina',
+  'nueva pagina',
+  'nueva pagina markdown',
+  'pagina sin titulo',
+]);
+
+export function isLegacyPlaceholderBody(text: string): boolean {
+  const normalized = normalizeLegacyComparisonText(text);
+  return Boolean(normalized) && LEGACY_PLACEHOLDER_BODIES.has(normalized);
+}
+
+export function isLegacyPlaceholderTitle(text: string): boolean {
+  const normalized = normalizeLegacyComparisonText(text);
+  return Boolean(normalized) && LEGACY_PLACEHOLDER_TITLES_NORMALIZED.has(normalized);
+}
+
+function isLegacyPlaceholderHeadingText(text: string): boolean {
+  const withoutHeadingPrefix = text.replace(/^#+\s*/, '');
+  return isLegacyPlaceholderTitle(withoutHeadingPrefix);
+}
+
 export function sanitizeLegacyPlaceholderBlocks(
   blocks: NoteBlock[]
 ): NoteBlock[] {
-  let cleaned = blocks.map((block) =>
-    block.type === 'paragraph' && block.text.trim() === LEGACY_PLACEHOLDER_BODY
-      ? { ...block, text: '' }
-      : block
+  const clearedFlags: boolean[] = [];
+  const processed: NoteBlock[] = blocks.map((block) => {
+    if (!TEXT_BEARING_BLOCK_TYPES.has(block.type)) {
+      clearedFlags.push(false);
+      return block;
+    }
+
+    if (isLegacyPlaceholderBody(block.text)) {
+      clearedFlags.push(true);
+      return { ...block, text: '' };
+    }
+
+    if (block.type === 'paragraph' && block.text.includes('\n')) {
+      const lines = block.text.split('\n');
+      const remaining = lines.filter((line) => !isLegacyPlaceholderBody(line));
+      if (remaining.length !== lines.length) {
+        const joined = remaining.join('\n').trim();
+        clearedFlags.push(joined.length === 0);
+        return { ...block, text: joined };
+      }
+    }
+
+    clearedFlags.push(false);
+    return block;
+  });
+
+  // Elimina encabezados/párrafos iniciales que sean títulos placeholder heredados
+  // (incluyendo párrafos vacíos previos si anteceden a un título placeholder).
+  let startIdx = 0;
+  while (startIdx < processed.length) {
+    let probe = startIdx;
+    while (
+      probe < processed.length &&
+      processed[probe]?.type === 'paragraph' &&
+      !processed[probe]!.text.trim()
+    ) {
+      probe += 1;
+    }
+    const candidate = processed[probe];
+    if (
+      candidate &&
+      (candidate.type === 'h1' || candidate.type === 'paragraph') &&
+      isLegacyPlaceholderHeadingText(candidate.text)
+    ) {
+      startIdx = probe + 1;
+      continue;
+    }
+    break;
+  }
+
+  let cleaned = processed.slice(startIdx);
+  let cleanedFlags = clearedFlags.slice(startIdx);
+
+  const hasRemainingContent = cleaned.some(
+    (b) => b.type === 'divider' || b.type === 'image' || b.text.trim().length > 0
   );
 
-  if (
-    cleaned[0]?.type === 'h1' &&
-    LEGACY_PLACEHOLDER_TITLES.has(cleaned[0].text.trim())
-  ) {
-    cleaned = cleaned.slice(1);
+  if (hasRemainingContent) {
+    cleaned = cleaned.filter((_, idx) => !cleanedFlags[idx]);
   }
 
   return cleaned.length > 0
@@ -281,43 +376,87 @@ export function sanitizeLegacyPlaceholderBlocks(
     : [createBlock('paragraph', { text: '' })];
 }
 
-export function loadBlocksForPage(
+export function parseRawBlocksForPage(
   page: Pick<NotePageRecord, 'blocksJson' | 'contentMarkdown'>
 ): NoteBlock[] {
   if (page.blocksJson) {
     try {
       const parsed = JSON.parse(page.blocksJson) as unknown;
       if (Array.isArray(parsed) && parsed.length > 0) {
-        return sanitizeLegacyPlaceholderBlocks(
-          parsed.map((raw) => {
-            const item = (raw && typeof raw === 'object' ? raw : {}) as Partial<NoteBlock>;
-            const type: NoteBlockType =
-              item.type &&
-              [
-                'paragraph',
-                'h1',
-                'h2',
-                'h3',
-                'checklist',
-                'callout',
-                'code',
-                'divider',
-                'image',
-              ].includes(item.type)
-                ? item.type
-                : 'paragraph';
-            return createBlock(type, item);
-          })
-        );
+        return parsed.map((raw) => {
+          const item = (raw && typeof raw === 'object' ? raw : {}) as Partial<NoteBlock>;
+          const type: NoteBlockType =
+            item.type &&
+            [
+              'paragraph',
+              'h1',
+              'h2',
+              'h3',
+              'checklist',
+              'callout',
+              'code',
+              'divider',
+              'image',
+            ].includes(item.type)
+              ? item.type
+              : 'paragraph';
+          return createBlock(type, item);
+        });
       }
     } catch {
       // Fallback directo a Markdown
     }
   }
 
-  return sanitizeLegacyPlaceholderBlocks(
-    parseMarkdownToBlocks(page.contentMarkdown)
-  );
+  return parseMarkdownToBlocks(page.contentMarkdown);
+}
+
+export function loadBlocksForPage(
+  page: Pick<NotePageRecord, 'blocksJson' | 'contentMarkdown'>
+): NoteBlock[] {
+  return sanitizeLegacyPlaceholderBlocks(parseRawBlocksForPage(page));
+}
+
+export function sanitizeLegacyNotePageRecord(
+  page: Pick<NotePageRecord, 'title' | 'contentMarkdown' | 'blocksJson'>
+): { title: string; contentMarkdown: string; blocksJson: string } | null {
+  const hasLegacyTitle = isLegacyPlaceholderTitle(page.title);
+  const nextTitle = hasLegacyTitle ? '' : page.title;
+
+  const rawBlocks = parseRawBlocksForPage(page);
+  const cleanedBlocks = sanitizeLegacyPlaceholderBlocks(rawBlocks);
+
+  const hasLegacyBlocks =
+    rawBlocks.length !== cleanedBlocks.length ||
+    rawBlocks.some(
+      (b, idx) =>
+        b.type !== cleanedBlocks[idx]?.type || b.text !== cleanedBlocks[idx]?.text
+    );
+
+  const hasLegacyMarkdown =
+    page.contentMarkdown.trim().length > 0 &&
+    page.contentMarkdown
+      .replace(/\r\n/g, '\n')
+      .split('\n')
+      .some((line) => {
+        const trimmed = line.trim();
+        if (!trimmed) return false;
+        if (isLegacyPlaceholderBody(trimmed)) return true;
+        if (/^#+\s*/.test(trimmed) && isLegacyPlaceholderHeadingText(trimmed)) {
+          return true;
+        }
+        return false;
+      });
+
+  if (!hasLegacyTitle && !hasLegacyBlocks && !hasLegacyMarkdown) {
+    return null;
+  }
+
+  return {
+    title: nextTitle,
+    blocksJson: JSON.stringify(cleanedBlocks),
+    contentMarkdown: serializeBlocksToMarkdown(cleanedBlocks).trim(),
+  };
 }
 
 /**
